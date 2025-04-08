@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CityPulse API Documentation</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.png') }}" type="image/png">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Charter:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-section">
+            <div class="nav-brand">
+                <svg viewBox="0 0 24 24" class="icon" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+                    <circle cx="12" cy="10" r="3" />
+                </svg>
+                <span>CityPulse</span>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link">App</a>
+                <a href="/api" class="nav-link active">API Docs</a>
+            </div>
+        </div>
+        <div class="nav-section">
+            <label class="switch">
+                <input type="checkbox" id="theme-toggle">
+                <span class="slider">
+                    <i class="fas fa-sun"></i>
+                    <i class="fas fa-moon"></i>
+                </span>
+            </label>
+        </div>
+    </nav>
+
+    <div class="api-docs">
+        <div class="docs-header">
+            <h1>CityPulse API Documentation</h1>
+            <p class="docs-intro">
+                The CityPulse API provides access to intelligent local recommendations powered by multiple data sources including Google Places, Reddit discussions, and local news.
+            </p>
+        </div>
+
+        <section class="docs-section">
+            <h2>Overview</h2>
+            <p>The API uses a combination of AI and multiple data sources to provide comprehensive local recommendations:</p>
+            <div class="process-flow">
+                <div class="process-step">
+                    <h3>1. Query Processing</h3>
+                    <p>Uses OpenAI to understand user queries and extract search criteria, requirements, and location information.</p>
+                </div>
+                <div class="process-step">
+                    <h3>2. Location Resolution</h3>
+                    <p>Resolves locations using Google Maps API, with built-in support for Sydney neighborhoods and landmarks.</p>
+                </div>
+                <div class="process-step">
+                    <h3>3. Data Gathering</h3>
+                    <p>Collects data from multiple sources:</p>
+                    <ul>
+                        <li>Google Places API for business information</li>
+                        <li>Reddit discussions for local insights</li>
+                        <li>Local news and articles</li>
+                    </ul>
+                </div>
+                <div class="process-step">
+                    <h3>4. Analysis & Response</h3>
+                    <p>AI-powered analysis combines all data sources to provide comprehensive recommendations.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="docs-section">
+            <h2>Endpoints</h2>
+            
+            <div class="endpoint">
+                <h3>Search Places</h3>
+                <code class="endpoint-url">POST /search</code>
+                
+                <h4>Request Format</h4>
+                <pre><code>{
+    "query": "string" // Your search query (e.g., "Best coffee in Surry Hills")
+}</code></pre>
+
+                <h4>Response Format</h4>
+                <pre><code>{
+    "places": [
+        {
+            "name": "string",
+            "location": {
+                "lat": float,
+                "lng": float
+            },
+            "address": "string",
+            "rating": float,
+            "total_ratings": integer,
+            "reviews": [
+                {
+                    "rating": float,
+                    "text": "string",
+                    "time": "string",
+                    "author": "string"
+                }
+            ],
+            "opening_hours": ["string"],
+            "website": "string",
+            "phone": "string",
+            "price_level": integer,
+            "types": ["string"],
+            "place_id": "string",
+            "additional_insights": {
+                "recent_mentions": [
+                    {
+                        "source": "string",
+                        "title": "string",
+                        "excerpt": "string",
+                        "date": "string"
+                    }
+                ],
+                "relevant_discussions": [
+                    {
+                        "title": "string",
+                        "url": "string",
+                        "comments": [
+                            {
+                                "text": "string",
+                                "score": integer,
+                                "date": "string"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    ],
+    "search_terms": "string",
+    "location": "string",
+    "summary": "string",
+    "highlights": "string",
+    "social_proof": "string",
+    "considerations": "string"
+}</code></pre>
+            </div>
+        </section>
+
+        <section class="docs-section">
+            <h2>Example Usage</h2>
+            <div class="example">
+                <h3>cURL Example</h3>
+                <pre><code>curl -X POST \
+    http://localhost:8080/search \
+    -H 'Content-Type: application/json' \
+    -d '{
+        "query": "Best coffee in Surry Hills"
+    }'</code></pre>
+
+                <h3>Python Example</h3>
+                <pre><code>import requests
+import json
+
+url = "http://localhost:8080/search"
+payload = {
+    "query": "Best coffee in Surry Hills"
+}
+headers = {
+    "Content-Type": "application/json"
+}
+
+response = requests.post(url, json=payload, headers=headers)
+results = response.json()
+
+print(json.dumps(results, indent=2))</code></pre>
+            </div>
+        </section>
+
+        <section class="docs-section">
+            <h2>Rate Limits</h2>
+            <p>The API is currently rate-limited to protect our services and ensure fair usage:</p>
+            <ul>
+                <li>100 requests per hour per IP address</li>
+                <li>2,000 requests per day per IP address</li>
+            </ul>
+            <p>For higher limits or commercial usage, please contact us.</p>
+        </section>
+    </div>
+
+    <footer class="app-footer">
+        <div class="footer-content">
+            <p>&copy; 2024 Louis Sabri. All rights reserved.</p>
+            <div class="footer-links">
+                <a href="https://github.com/louissabri" target="_blank" rel="noopener noreferrer" title="GitHub">
+                    <i class="fab fa-github"></i>
+                </a>
+                <a href="https://www.linkedin.com/in/louissabri/" target="_blank" rel="noopener noreferrer" title="LinkedIn">
+                    <i class="fab fa-linkedin"></i>
+                </a>
+                <a href="https://louissabri.github.io" target="_blank" rel="noopener noreferrer" title="Personal Website">
+                    <i class="fas fa-globe"></i>
+                </a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="{{ url_for('static', filename='theme.js') }}"></script>
+</body>
+</html> 

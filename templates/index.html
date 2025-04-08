@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CityPulse</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.png') }}" type="image/png">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Charter:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-section">
+            <div class="nav-brand">
+                <svg viewBox="0 0 24 24" class="icon" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+                    <circle cx="12" cy="10" r="3" />
+                </svg>
+                <span>CityPulse</span>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link active">App</a>
+                <a href="/api" class="nav-link">API Docs</a>
+            </div>
+        </div>
+        <div class="nav-section">
+            <label class="switch">
+                <input type="checkbox" id="theme-toggle">
+                <span class="slider">
+                    <i class="fas fa-sun"></i>
+                    <i class="fas fa-moon"></i>
+                </span>
+            </label>
+        </div>
+    </nav>
+
+    <div class="app-container">
+        <div class="main-content">
+            <div class="chat-container">
+                <div class="chat-header">
+                    <div class="logo">CityPulse</div>
+                    <div class="status-indicator">
+                        <span class="dot"></span>
+                        <span>Online</span>
+                    </div>
+                    <button class="clear-chat-btn" onclick="clearConversation()" title="Clear conversation">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
+                
+                <div class="chat-messages" id="chat-messages">
+                    <div class="message system initial">
+                        <h2>Welcome to CityPulse</h2>
+                        <p>Ask me about places in Sydney and I'll help you discover the best spots!</p>
+                        <div class="example-queries">
+                            <button class="query-pill" onclick="useExample(this)">Best coffee in Surry Hills</button>
+                            <button class="query-pill" onclick="useExample(this)">Hidden bars in Darlinghurst</button>
+                            <button class="query-pill" onclick="useExample(this)">Family-friendly restaurants in Bondi</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chat-input-container">
+                    <div class="input-wrapper">
+                        <input type="text" id="query" placeholder="Ask me about places in Sydney..." autocomplete="off">
+                        <button class="send-button" onclick="sendMessage()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="input-footer">
+                        <span class="hint">Press Enter ↵ to send</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="map-container">
+                <div class="map-header">
+                    <div class="view-controls">
+                        <button class="view-toggle active" data-view="map">Map View</button>
+                        <button class="view-toggle" data-view="list">List View</button>
+                    </div>
+                </div>
+                <div id="map"></div>
+                <div id="list-view" class="hidden">
+                    <!-- List view will be populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="{{ url_for('static', filename='theme.js') }}"></script>
+    <script>
+        // Initialize theme before Google Maps loads
+        document.addEventListener('DOMContentLoaded', () => {
+            initTheme();
+        });
+
+        // Callback when Google Maps is loaded
+        function googleMapsLoaded() {
+            initMap();
+            // Update map style after map is initialized
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+            if (window.updateMapStyle) {
+                window.updateMapStyle(currentTheme);
+            }
+        }
+    </script>
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key={{ maps_api_key }}&libraries=places&callback=googleMapsLoaded">
+    </script>
+
+    <footer class="app-footer">
+        <div class="footer-content">
+            <p>&copy; 2024 Louis Sabri. All rights reserved.</p>
+            <div class="footer-links">
+                <a href="https://github.com/louissabri" target="_blank" rel="noopener noreferrer" title="GitHub">
+                    <i class="fab fa-github"></i>
+                </a>
+                <a href="https://www.linkedin.com/in/louissabri/" target="_blank" rel="noopener noreferrer" title="LinkedIn">
+                    <i class="fab fa-linkedin"></i>
+                </a>
+                <a href="https://louissabri.github.io" target="_blank" rel="noopener noreferrer" title="Personal Website">
+                    <i class="fas fa-globe"></i>
+                </a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html> 
