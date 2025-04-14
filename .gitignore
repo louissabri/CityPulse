@@ -101,6 +101,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.venv_py310/
 venv/
 ENV/
 env/
@@ -139,4 +140,5 @@ cython_debug/
 MAPS_API_KEY.txt
 OPENAI_API_KEY.txt
 conversations.db
-conversations.db-journal 
+conversations.db-journal
+.notes/ 

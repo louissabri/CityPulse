@@ -1,7 +1,7 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
+import os
 import openai
 import googlemaps
-import os
 from dotenv import load_dotenv
 from pathlib import Path
 from data_sources import DataSourceManager
@@ -9,31 +9,41 @@ import asyncio
 import logging
 from conversation_manager import ConversationManager
 from datetime import datetime
+import re
+import json
+from typing import List, Dict, Optional, Set
+
+# Constants
+MAX_PLACES_TO_ANALYZE = 7  # Number of top places to analyze in depth
+DEFAULT_LOCATION_COORDS = {'lat': -33.8688, 'lng': 151.2093}  # Sydney CBD
 
 # Load environment variables
 env_path = Path('.') / '.env'
 load_dotenv(env_path, override=True)
 
-# Debug: Print loaded API key (first few characters)
 maps_api_key = os.getenv('MAPS_API_KEY')
-if maps_api_key:
-    print(f"Loaded Maps API key starting with: {maps_api_key[:10]}...")
-else:
+if not maps_api_key:
     print("WARNING: No Maps API key found!")
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex())
+
+# Set up enhanced logging
+logging.basicConfig(
+    level=logging.INFO,  # Changed back to INFO for production
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+werkzeug_logger = logging.getLogger('werkzeug')
+werkzeug_logger.setLevel(logging.INFO)
 
 # Initialize API clients
 openai_api_key = os.getenv('OPENAI_API_KEY')
 openai.api_key = openai_api_key
 try:
     gmaps = googlemaps.Client(key=maps_api_key)
-    # Test the API key with a simple geocoding request
     test_result = gmaps.geocode('Sydney, Australia')
-    if test_result:
-        print("Google Maps API key is working!")
-    else:
+    if not test_result:
         print("Google Maps API key validation failed - no results returned")
 except Exception as e:
     print(f"Error initializing Google Maps client: {str(e)}")
@@ -44,13 +54,6 @@ data_manager = DataSourceManager()
 
 # Initialize conversation manager
 conversation_manager = ConversationManager()
-
-# Define default coordinates (Sydney CBD)
-DEFAULT_LOCATION_COORDS = {'lat': -33.8688, 'lng': 151.2093}
-
-# Add after Flask app initialization
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Cleaning up old sessions every day
 CLEANUP_INTERVAL = 60 * 60 * 24  # Once per day
@@ -82,9 +85,19 @@ def generate_session_id():
     session_id = conversation_manager.generate_session_id(user_ip, user_agent)
     return jsonify({'session_id': session_id})
 
+@app.route('/static/<path:filename>')
+def custom_static(filename):
+    """Explicit route for serving static files with additional error handling."""
+    try:
+        logger.debug(f"Serving static file: {filename}")
+        return send_from_directory('static', filename)
+    except Exception as e:
+        logger.error(f"Error serving static file {filename}: {str(e)}")
+        return f"Error serving file: {str(e)}", 500
+
 @app.route('/chat', methods=['POST'])
 async def chat():
-    """Conversational chat endpoint that maintains history."""
+    """Handle incoming chat messages."""
     try:
         data = request.json
         user_message = data.get('message', '').strip()
@@ -99,7 +112,7 @@ async def chat():
         if not session_id:
             logger.warning("No session ID provided")
             return jsonify({'error': 'No session ID provided'}), 400
-        
+
         # Check if this might be a search query
         is_search_query = any(keyword in user_message.lower() for keyword in 
                              ['find', 'where', 'location', 'place', 'nearby', 'restaurant', 'cafe', 'bar'])
@@ -123,7 +136,7 @@ async def chat():
         logger.info(f"Got trimmed conversation with {len(conversation)} messages")
         
         try:
-            logger.info("Calling OpenAI API")
+            logger.info("Calling OpenAI API for general chat")
             # Use the older openai API style
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",  # or gpt-4 if available
@@ -146,16 +159,16 @@ async def chat():
             return jsonify({'response': assistant_message})
             
         except Exception as e:
-            logger.error(f"OpenAI API error: {str(e)}")
+            logger.error(f"OpenAI API error: {str(e)}", exc_info=True)
             return jsonify({'response': "I'm sorry, I encountered an error processing your request. Please try again."})
     
     except Exception as e:
         logger.error(f"Error in chat endpoint: {str(e)}", exc_info=True)
         return jsonify({'response': "I'm sorry, something went wrong with the chat service. Please try again."})
 
-# Modified search function to accept optional parameters from chat
+# Simplify the search function to use only Google Maps Places API
 async def search(query=None, session_id=None):
-    """Search for places based on user query."""
+    """Search for places based on user query using Google Maps API only."""
     request_start_time = datetime.now()
     logger.info(f"=== Search Start === Received Query Parameter: '{query}', Session: {session_id}")
     
@@ -267,7 +280,7 @@ async def search(query=None, session_id=None):
             }), 503
 
         location = None
-        search_radius = 5000 # Default large radius 
+        search_radius = 5000  # Default large radius 
         location_specificity = "default"
 
         # Attempt Geocoding if a specific location query was extracted
@@ -281,335 +294,247 @@ async def search(query=None, session_id=None):
                     
                     # Determine specificity and radius based on result type
                     types = geocode_result[0].get('types', [])
-                    if any(t in types for t in ['locality', 'sublocality', 'neighborhood']): # Suburb level
+                    if any(t in types for t in ['locality', 'sublocality', 'neighborhood']):  # Suburb level
                         search_radius = 1500 
                         location_specificity = "geocoded_suburb"
-                    elif any(t in types for t in ['administrative_area_level_1', 'country']): # Very broad (State/Country)
-                        search_radius = 10000 # Use a larger radius for broad areas like 'Sydney'
+                    elif any(t in types for t in ['administrative_area_level_1', 'country']):  # Very broad
+                        search_radius = 10000  # Use a larger radius for broad areas like 'Sydney'
                         location_specificity = "geocoded_broad_area"
-                    else: # Could be a street, PoI, etc. 
+                    else:  # Could be a street, PoI, etc. 
                         search_radius = 2000
                         location_specificity = "geocoded_specific"
-                    logger.info(f"[Search] Using GEOCODED location: {location_query} -> {location}. Specificity: {location_specificity}. Types: {types}. Radius: {search_radius}m")
+                    logger.info(f"[Search] Using GEOCODED location: {location_query} -> {location}. Radius: {search_radius}m")
                 else:
                     logger.warning(f"[Search] Geocoding failed for '{location_query}'. Falling back to default Sydney CBD.")
-                    location_query = 'default' # Mark as default if geocoding failed
+                    location_query = 'default'  # Mark as default if geocoding failed
             except Exception as e:
                 logger.error(f"[Search] Geocoding error for '{location_query}': {str(e)}", exc_info=True)
-                location_query = 'default' # Mark as default on error
+                location_query = 'default'  # Mark as default on error
         else:
             logger.info(f"[Search] No specific location query ('{location_query}'), using default Sydney CBD.")
-            location_query = 'default' # Ensure it is marked default
+            location_query = 'default'  # Ensure it is marked default
         
         # Fallback to Default Sydney CBD if geocoding wasn't attempted or failed
         if not location:
             location = (DEFAULT_LOCATION_COORDS['lat'], DEFAULT_LOCATION_COORDS['lng'])
-            search_radius = 5000 # Ensure default radius
+            search_radius = 5000  # Ensure default radius
             location_specificity = "default_cbd"
             logger.info(f"[Search] Using DEFAULT location (Sydney CBD) -> {location}. Radius: {search_radius}m")
 
-        # --- Google Maps API Call --- 
+        # --- Search using Google Places API only ---
         try:
-            logger.info(f"[Search] Calling Google Maps API - Location: {location}, Radius: {search_radius}, Keyword: '{search_terms}'")
-            gmaps_start_time = datetime.now()
-            places_result = gmaps.places_nearby(
-                location=location,
-                radius=search_radius,
-                keyword=search_terms
-            )
-            gmaps_duration = (datetime.now() - gmaps_start_time).total_seconds()
-            logger.info(f"[Search] Google Maps API call took {gmaps_duration:.2f}s")
-            logger.info(f"[Search] Raw Google Maps Result (first 500 chars): {str(places_result)[:500]}")
-
-            places_to_analyze = places_result.get('results', [])[:5]
-
-            logger.info(f"[Search] Number of places to analyze: {len(places_to_analyze)}")
-            if not places_to_analyze:
-                logger.warning("[Search] No places found by Google Maps.")
+            # Fetch places from Google Places API
+            logger.info(f"[Search] Fetching places from Google Maps API: {search_terms}")
+            google_places = await _fetch_google_nearby(location, search_radius, search_terms)
+            
+            if not google_places:
+                logger.warning(f"[Search] No places found from Google Maps API.")
                 return jsonify({
-                    'places': [],
-                    'search_terms': search_terms,
-                    'message': f'I searched for {search_terms} within {search_radius/1000}km of {location_query if location_query != "default" else "Sydney"}, but couldn\'t find any matches. Try broadening your search or trying a different location.'
-                })
-
-            filtered_places = []
-            details_fetch_start_time = datetime.now()
-            for i, place in enumerate(places_to_analyze):
-                logger.info(f"[Search] Processing Place {i+1}/{len(places_to_analyze)}: {place.get('name', 'Unknown')} (ID: {place.get('place_id', 'N/A')})")
-                try:
-                    logger.info(f"\n{'='*50}\nProcessing place: {place.get('name', 'Unknown')}\n{'='*50}")
-                    
-                    place_details = gmaps.place(place['place_id'])['result']
-                    logger.info(f"Google Maps Reviews found: {len(place_details.get('reviews', []))}")
-                    
-                    logger.info(f"Fetching additional data for: {place_details.get('name', '')}")
-                    additional_data = await data_manager.gather_additional_data(
-                        place_details.get('name', ''),
-                        location_query
-                    )
-                    
-                    logger.info(f"Additional data gathered:")
-                    logger.info(f"- Articles found: {len(additional_data.get('articles', []))}")
-                    logger.info(f"- Reddit posts found: {len(additional_data.get('reddit_posts', []))}")
-                    
-                    insights = data_manager.extract_relevant_insights(additional_data, user_query)
-                    logger.info(f"Insights extracted:")
-                    logger.info(f"- Recent mentions: {len(insights['recent_mentions'])}")
-                    logger.info(f"- Relevant discussions: {len(insights['relevant_discussions'])}")
-                    
-                    reviews = []
-                    if 'reviews' in place_details:
-                        for review in place_details['reviews']:
-                            reviews.append({
-                                'rating': review.get('rating', 'N/A'),
-                                'text': review.get('text', ''),
-                                'time': review.get('relative_time_description', ''),
-                                'author': review.get('author_name', 'Anonymous')
-                            })
-
-                    debug_info = {
-                        'data_sources': {
-                            'google_reviews': len(reviews),
-                            'articles': len(additional_data.get('articles', [])),
-                            'reddit_posts': len(additional_data.get('reddit_posts', [])),
-                            'recent_mentions': len(insights['recent_mentions']),
-                            'relevant_discussions': len(insights['relevant_discussions'])
-                        }
+                    'error': 'No places found matching your query.',
+                    'query': {
+                        'original': user_query,
+                        'amenity': search_terms,
+                        'requirements': requirements,
+                        'location': location_query
                     }
-
-                    filtered_places.append({
-                        'name': place_details.get('name', ''),
-                        'location': {
-                            'lat': place['geometry']['location']['lat'],
-                            'lng': place['geometry']['location']['lng']
-                        },
-                        'address': place_details.get('formatted_address', ''),
-                        'rating': place_details.get('rating', 'N/A'),
-                        'total_ratings': place_details.get('user_ratings_total', 0),
-                        'reviews': reviews,
-                        'opening_hours': place_details.get('opening_hours', {}).get('weekday_text', []),
-                        'website': place_details.get('website', ''),
-                        'phone': place_details.get('formatted_phone_number', ''),
-                        'price_level': place_details.get('price_level', 'N/A'),
-                        'types': place.get('types', []),
-                        'place_id': place.get('place_id', ''),
-                        'additional_insights': {
-                            'recent_mentions': insights['recent_mentions'],
-                            'relevant_discussions': insights['relevant_discussions']
-                        },
-                        'debug_info': debug_info
-                    })
-                except Exception as e:
-                    logger.error(f"[Search] Error processing place {place.get('name', 'Unknown')}: {str(e)}", exc_info=True)
-                    filtered_places.append({
-                        'name': place['name'],
-                        'location': {
-                            'lat': place['geometry']['location']['lat'],
-                            'lng': place['geometry']['location']['lng']
-                        },
-                        'address': place.get('vicinity', ''),
-                        'rating': place.get('rating', 'N/A'),
-                        'total_ratings': place.get('user_ratings_total', 0),
-                        'reviews': [],
-                        'opening_hours': [],
-                        'website': '',
-                        'phone': '',
-                        'price_level': 'N/A',
-                        'types': place.get('types', []),
-                        'place_id': place.get('place_id', '')
-                    })
-            details_fetch_duration = (datetime.now() - details_fetch_start_time).total_seconds()
-            logger.info(f"[Search] Fetching details for {len(filtered_places)} places took {details_fetch_duration:.2f}s")
-            logger.info(f"[Search] Filtered Places data (first place name): {filtered_places[0]['name'] if filtered_places else 'None'}")
-
-            logger.info(f"\n{'='*50}\nStarting analysis phase\n{'='*50}")
-            logger.info(f"Analyzing {len(filtered_places)} places for query: {user_query}")
-
-            analysis_prompt = f"""As a local expert, analyze these places in response to: "{user_query}"
-
-            The user is looking for: {search_terms}
-            With these requirements: {requirements}
-            In this location: {location_query}
-
-            For each place below, focus on synthesizing information from ALL available sources (Google Reviews, Articles, and Reddit discussions) to provide a comprehensive analysis.
+                }), 404
             
-            Places to analyze:
-            {'\n\n'.join([
-                f"=== {place['name']} ===\n" +
-                f"Rating: {place['rating']}★ ({place['total_ratings']} reviews)\n" +
-                f"Location: {place['address']}\n" +
-                f"Price: {'$' * place['price_level'] if place['price_level'] != 'N/A' else 'N/A'}\n\n" +
-                f"Google Reviews:\n" +
-                '\n'.join([
-                    f"- {review['rating']}★: \"{review['text']}\""
-                    for review in place['reviews'][:2]
-                ]) +
-                f"\n\nRecent Articles & News:\n" +
-                '\n'.join([
-                    f"- {mention['source']} ({mention['date']}): {mention['excerpt']}"
-                    for mention in place['additional_insights']['recent_mentions'][:2]
-                ]) +
-                f"\n\nReddit Discussions:\n" +
-                '\n'.join([
-                    f"- {discussion['title']} ({discussion['date']}):\n  " +
-                    '\n  '.join([
-                        f"• {comment['text']}"
-                        for comment in discussion['relevant_comments'][:1]
-                    ])
-                    for discussion in place['additional_insights']['relevant_discussions'][:2]
-                ])
-                for place in filtered_places
-            ])}
+            logger.info(f"[Search] Found {len(google_places)} places from Google Maps API")
+                
+            # Get place details for top results
+            top_places = google_places[:MAX_PLACES_TO_ANALYZE]
+            logger.info(f"[Search] Getting details for top {len(top_places)} places")
+            
+            # Get details for each place
+            places_with_details = []
+            for place in top_places:
+                place_id = place.get('place_id')
+                if place_id:
+                    try:
+                        logger.info(f"[Search] Getting details for place: {place.get('name')}")
+                        
+                        # Get place details from Google Maps API
+                        place_details = await _fetch_place_details(place_id)
+                        if place_details:
+                            places_with_details.append(place_details)
+                        else:
+                            logger.warning(f"[Search] No details found for place: {place.get('name')}")
+                    except Exception as e:
+                        logger.error(f"[Search] Error getting details for place {place.get('name')}: {str(e)}")
+            
+            # Analyze places using OpenAI
+            analysis_prompt = f"""Analyze these places in Sydney based on the user's query: "{user_query}"
 
-            Provide a balanced analysis in this EXACT format:
-            summary: [2-3 sentences directly answering the user's query, mentioning the best options and why they match the requirements. Include insights from different sources.]
-            highlights: [3-5 bullet points of specific features that match the user's requirements, with place names. Mix insights from reviews, articles, and discussions.]
-            social_proof: [2-3 specific quotes from different sources (reviews, articles, Reddit) that best support the recommendations]
-            considerations: [1-2 important notes about availability, peak times, or other relevant factors from any source]
+Places:
+"""
+            for i, place in enumerate(places_with_details):
+                name = place.get('name', 'Unknown')
+                address = place.get('formatted_address', 'Address unknown')
+                rating = place.get('rating', 'No rating')
+                types = ', '.join(place.get('types', ['Unknown']))
+                
+                # Add details to prompt
+                analysis_prompt += f"""
+{i+1}. {name}
+   Address: {address}
+   Rating: {rating}/5
+   Types: {types}
+   """
+                
+                # Add reviews if available
+                reviews = place.get('reviews', [])
+                if reviews:
+                    analysis_prompt += "   Recent reviews:\n"
+                    for j, review in enumerate(reviews[:3]):  # Only include up to 3 reviews
+                        review_text = review.get('text', '').replace('\n', ' ')[:100]  # Truncate long reviews
+                        review_rating = review.get('rating', 0)
+                        analysis_prompt += f"   - {review_text}... (Rating: {review_rating}/5)\n"
+                        
+            # Add instructions for analysis
+            analysis_prompt += """
+Based on the user's query, provide:
+1. A summary of the best options
+2. Highlights of each place relevant to the query
+3. Any notable comparisons between options
 
-            Focus on answering these specific aspects of the query:
-            1. Which places best match the specific requirements? (Use all sources)
-            2. What recent developments or changes are mentioned in articles?
-            3. What do locals on Reddit say about these places?
-            4. What practical information would help the user decide?
-
-            Keep all responses concise and focused on the user's needs."""
-
-            logger.info(f"[Search] Analysis Prompt (first 500 chars): {analysis_prompt[:500]}")
-
-            analysis_start_time = datetime.now()
-            analysis_response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a knowledgeable local expert who provides clear, practical recommendations based on real experiences and reviews."},
-                    {"role": "user", "content": analysis_prompt}
-                ],
-                temperature=0.7
-            )
-            analysis_duration = (datetime.now() - analysis_start_time).total_seconds()
-            logger.info(f"[Search] OpenAI Analysis call took {analysis_duration:.2f}s")
-
-            analysis_text = analysis_response['choices'][0]['message']['content'].strip()
-            logger.info(f"[Search] Raw analysis response from OpenAI:\n------ START ANALYSIS -----\n{analysis_text}\n------ END ANALYSIS ------")
-
-            analysis_data = {
-                'summary': '',
-                'highlights': '',
-                'social_proof': '',
-                'considerations': ''
-            }
-            current_key = None
+Format your response as JSON with these exact fields:
+{
+  "summary": "A concise summary of the best matches for the query",
+  "highlights": [
+    {"place_name": "Name of Place 1", "key_features": ["Feature 1", "Feature 2"]},
+    {"place_name": "Name of Place 2", "key_features": ["Feature 1", "Feature 2"]}
+  ],
+  "comparisons": ["Comparison point 1", "Comparison point 2"]
+}
+"""
+            
+            # Get analysis from OpenAI
             try:
-                lines = analysis_text.strip().split('\n')
-                for line in lines:
-                    line_stripped = line.strip()
-                    if not line_stripped:
-                        continue
+                logger.info("[Search] Calling OpenAI for place analysis")
+                analysis_response = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant that analyzes places based on user queries."},
+                        {"role": "user", "content": analysis_prompt}
+                    ],
+                    temperature=0.7
+                )
+                
+                analysis_text = analysis_response['choices'][0]['message']['content'].strip()
+                logger.info(f"[Search] Received analysis from OpenAI")
+                
+                # Try to parse JSON
+                analysis_data = {}
+                try:
+                    # Extract JSON from response
+                    json_match = re.search(r'```json\s*(.*?)\s*```', analysis_text, re.DOTALL)
+                    if json_match:
+                        json_str = json_match.group(1)
+                    else:
+                        json_str = analysis_text
+                        
+                    # Clean up the string and parse JSON
+                    json_str = re.sub(r'```.*?```', '', json_str, flags=re.DOTALL)
+                    analysis_data = json.loads(json_str)
+                    logger.info("[Search] Successfully parsed analysis JSON")
+                except Exception as json_error:
+                    logger.error(f"[Search] Error parsing analysis JSON: {str(json_error)}")
+                    # Fallback to text response
+                    analysis_data = {
+                        "summary": analysis_text[:500] + "...",
+                        "highlights": [],
+                        "comparisons": []
+                    }
                     
-                    found_key = False
-                    for key in analysis_data.keys():
-                        if line_stripped.lower().startswith(key + ':'):
-                            current_key = key
-                            value = line.split(':', 1)[1].strip().strip('[]')
-                            analysis_data[current_key] = value
-                            found_key = True
-                            break
-                        
-                    if not found_key and current_key:
-                        separator = '\n' if analysis_data[current_key] else ''
-                        analysis_data[current_key] += separator + line_stripped
-                        
-            except Exception as parse_error:
-                logger.error(f"[Search] Error parsing analysis response: {parse_error}", exc_info=True)
-            
-            for key in analysis_data:
-                analysis_data[key] = analysis_data[key].strip()
-            
-            logger.info(f"[Search] Parsed analysis data: {analysis_data}")
-
-            for place in filtered_places:
-                sources = []
+                # Add analysis to conversation history if session provided
+                if session_id:
+                    conversation_manager.add_message(session_id, 'assistant', 
+                                                   f"I found some places matching your search. {analysis_data.get('summary', '')}")
                 
-                for review in place['reviews']:
-                    sources.append({
-                        'type': 'review',
-                        'source': 'Google Review',
-                        'rating': review['rating'],
-                        'content': review['text'],
-                        'metadata': {
-                            'author': review['author'],
-                            'date': review['time']
-                        }
-                    })
+                # Prepare final response
+                final_data = {
+                    'places': places_with_details,
+                    'analysis': analysis_data,
+                    'query': {
+                        'original': user_query,
+                        'amenity': search_terms,
+                        'requirements': requirements,
+                        'location': location_query
+                    }
+                }
                 
-                for mention in place['additional_insights']['recent_mentions']:
-                    sources.append({
-                        'type': 'article',
-                        'source': mention['source'],
-                        'title': mention['title'],
-                        'content': mention['excerpt'],
-                        'metadata': {
-                            'date': mention['date'],
-                            'url': mention['url']
-                        }
-                    })
+                request_duration = (datetime.now() - request_start_time).total_seconds()
+                logger.info(f"=== Search End === Total Duration: {request_duration:.2f}s")
+                return jsonify(final_data)
                 
-                for discussion in place['additional_insights']['relevant_discussions']:
-                    for comment in discussion['relevant_comments']:
-                        sources.append({
-                            'type': 'reddit',
-                            'source': 'Reddit',
-                            'title': discussion['title'],
-                            'content': comment['text'],
-                            'metadata': {
-                                'score': comment['score'],
-                                'date': comment['date'],
-                                'url': discussion['url']
-                            }
-                        })
-                
-                place['sources'] = sources
-
-            logger.info(f"\n{'='*50}\nAnalysis complete\n{'='*50}")
-            logger.info(f"Summary length: {len(analysis_data.get('summary', ''))}")
-            logger.info(f"Number of highlights: {len(analysis_data.get('highlights', '').split('•'))}")
-            logger.info(f"Social proof quotes: {len(analysis_data.get('social_proof', '').split('•'))}")
-
-            if session_id:
-                summary_message = f"Based on your query, I found information about {search_terms} in {location_query if location_query != 'default' else 'Sydney'}. Here's what I found:"
-                conversation_manager.add_message(session_id, 'assistant', summary_message)
-
-            final_data = {
-                'places': filtered_places,
-                'search_terms': search_terms,
-                'location': location_query if location_query != "default" else "Sydney",
-                'summary': analysis_data.get('summary', ''),
-                'highlights': analysis_data.get('highlights', ''),
-                'social_proof': analysis_data.get('social_proof', ''),
-                'considerations': analysis_data.get('considerations', '')
-            }
-            logger.info(f"[Search] Final JSON data being returned (keys): {list(final_data.keys())}")
-            logger.info(f"[Search] Summary in final data: {final_data.get('summary', 'MISSING')[:100]}...")
-            request_duration = (datetime.now() - request_start_time).total_seconds()
-            logger.info(f"=== Search End === Total Duration: {request_duration:.2f}s")
-            return jsonify(final_data)
-
-        except Exception as e:
-            error_message = str(e)
-            if "REQUEST_DENIED" in error_message:
+            except Exception as analysis_error:
+                logger.error(f"[Search] OpenAI analysis error: {str(analysis_error)}")
                 return jsonify({
-                    'error': 'The Google Maps API is not properly configured.'
-                }), 503
-            print(f"Google Maps API error: {error_message}")
-            return jsonify({'error': 'Error fetching places from Google Maps'}), 500
+                    'places': places_with_details,
+                    'error': 'Error analyzing places',
+                    'query': {
+                        'original': user_query,
+                        'amenity': search_terms,
+                        'requirements': requirements,
+                        'location': location_query
+                    }
+                })
+                
+        except Exception as search_error:
+            logger.error(f"[Search] Error during Google Places search: {str(search_error)}")
+            return jsonify({'error': 'Error searching for places.'}), 500
 
     except Exception as e:
-        print(f"OpenAI API error: {str(e)}")
-        return jsonify({'error': 'Error processing your request'}), 500
+        logger.error(f"[Search] Top-level Error in search function: {str(e)}", exc_info=True)
+        return jsonify({'error': 'Error processing your request.'}), 500
+
+async def _fetch_google_nearby(location, radius, keyword) -> List[Dict]:
+    """Fetches Google Nearby results asynchronously."""
+    if not gmaps:
+        logger.error("[Search] Google Maps client not available for Nearby Search.")
+        return []
+    try:
+        loop = asyncio.get_running_loop()
+        logger.info(f"[Search] Starting Google Nearby Search - Keyword: '{keyword}'")
+        places_result = await loop.run_in_executor(
+            None, # Use default executor
+            lambda: gmaps.places_nearby(location=location, radius=radius, keyword=keyword)
+        )
+        results = places_result.get('results', [])
+        logger.info(f"[Search] Google Nearby Search finished. Found {len(results)} raw results.")
+        return results # Return all results
+    except Exception as e:
+        logger.error(f"[Search] Error during Google Nearby Search API call: {e}", exc_info=True)
+        return []
+
+async def _fetch_place_details(place_id: str) -> Optional[Dict]:
+    """Fetches details for a specific place using its ID."""
+    if not gmaps:
+        logger.error("[Search] Google Maps client not available for Place Details.")
+        return None
+    try:
+        loop = asyncio.get_running_loop()
+        logger.info(f"[Search] Fetching details for place ID: {place_id}")
+        details_result = await loop.run_in_executor(
+            None,
+            lambda: gmaps.place(
+                place_id=place_id,
+                fields=['name', 'formatted_address', 'rating', 'types', 'reviews', 
+                        'photos', 'website', 'price_level', 'opening_hours', 
+                        'formatted_phone_number', 'geometry']
+            )
+        )
+        result = details_result.get('result', {})
+        logger.info(f"[Search] Successfully fetched details for: {result.get('name', 'Unknown')}")
+        return result
+    except Exception as e:
+        logger.error(f"[Search] Error fetching place details: {e}", exc_info=True)
+        return None
 
 @app.teardown_appcontext
 async def teardown_session(exception=None):
     await data_manager.close()
 
 if __name__ == '__main__':
+    print("Starting app on http://localhost:8080")
     app.run(host='0.0.0.0', port=8080, debug=True) 
