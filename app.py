@@ -55,6 +55,9 @@ data_manager = DataSourceManager()
 # Initialize conversation manager
 conversation_manager = ConversationManager()
 
+# Create a simple memory cache for search context
+search_context_cache = {}
+
 # Cleaning up old sessions every day
 CLEANUP_INTERVAL = 60 * 60 * 24  # Once per day
 last_cleanup_time = 0
@@ -117,6 +120,92 @@ async def chat():
         is_search_query = any(keyword in user_message.lower() for keyword in 
                              ['find', 'where', 'location', 'place', 'nearby', 'restaurant', 'cafe', 'bar'])
         
+        # Also check for follow-up questions about locations
+        if not is_search_query:
+            # Check for patterns like "what about in [location]" or "any in [location]"
+            follow_up_location_patterns = [
+                r'what about in \w+',
+                r'how about in \w+', 
+                r'any in \w+',
+                r'what about \w+',
+                r'similar in \w+'
+            ]
+            
+            for pattern in follow_up_location_patterns:
+                if re.search(pattern, user_message.lower()):
+                    is_search_query = True
+                    logger.info(f"Detected location follow-up query pattern: '{user_message}'")
+                    break
+        
+        # Use NLP to detect search intent instead of keyword matching
+        # This approach classifies the query based on its overall meaning rather than specific keywords
+        try:
+            # First check for direct signs of search intent in the message
+            search_indicators = {
+                'location': r'\b(in|near|around)\s+([A-Z][a-z]+|\w+\s+\w+)',  # "in Sydney", "near Newtown"
+                'place_type': r'\b(restaurant|cafe|bar|pub|garden|shop|store|venue|place)s?\b',  # Types of places
+                'amenity': r'\b(dog|pet|family|kid|child|outdoor|friendly|beer|wine|food)\b',  # Common amenities
+                'action': r'\b(find|look|search|where|show|recommend|suggest)\b'  # Search actions
+            }
+            
+            # Check for location patterns, place types, and amenities
+            matches = []
+            for indicator_type, pattern in search_indicators.items():
+                if re.search(pattern, user_message.lower()):
+                    matches.append(indicator_type)
+                    logger.info(f"Detected search indicator: {indicator_type} in '{user_message}'")
+            
+            # If we have multiple indicators or specific combinations, treat as search query
+            is_search_query = (len(matches) >= 2 or  # Multiple indicators suggest search intent
+                              'location' in matches or  # Explicit location is strong signal
+                              ('place_type' in matches and 'amenity' in matches) or  # Place + amenity
+                              'action' in matches)  # Explicit search action
+                              
+            # For more complex cases, use OpenAI to analyze search intent
+            if not is_search_query and len(user_message.split()) > 3:  # Only for non-trivial messages
+                logger.info(f"Using OpenAI to classify search intent for: '{user_message}'")
+                
+                intent_query = f"""Determine if this is a location/place search query: "{user_message}"
+                
+                Examples of search queries:
+                - "Dog friendly beer gardens in Newtown"
+                - "Where can I find good coffee shops with wifi?"
+                - "Italian restaurants in Sydney CBD"
+                - "Pubs with outdoor seating"
+                
+                Is this a query looking for places, venues, or locations? Respond with ONLY 'yes' or 'no'."""
+                
+                try:
+                    intent_response = openai.ChatCompletion.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": "You are a system that determines if a message is asking about places or locations. Only respond with 'yes' or 'no'."},
+                            {"role": "user", "content": intent_query}
+                        ],
+                        max_tokens=5,  # Very short response needed
+                        temperature=0.1  # Low temperature for consistency
+                    )
+                    
+                    intent_result = intent_response['choices'][0]['message']['content'].strip().lower()
+                    is_search_query = 'yes' in intent_result
+                    logger.info(f"OpenAI classified as search query: {is_search_query}")
+                    
+                except Exception as e:
+                    logger.error(f"Error using OpenAI for intent classification: {str(e)}")
+                    # Fall back to simple heuristic - longer queries about places are likely searches
+                    if any(term in user_message.lower() for term in ['in', 'at', 'near', 'around']):
+                        is_search_query = True
+                        logger.info("Fallback location heuristic detected search query")
+            
+            logger.info(f"Final search intent classification: {is_search_query}")
+        
+        except Exception as e:
+            logger.error(f"Error in search intent detection: {str(e)}")
+            # If error in detection, fall back to original method
+            is_search_query = any(keyword in user_message.lower() for keyword in 
+                            ['find', 'where', 'location', 'place', 'nearby', 'restaurant', 'cafe', 'bar'])
+            logger.info(f"Fallback search detection: {is_search_query}")
+        
         logger.info(f"Message identified as search query: {is_search_query}")
         
         # Add user message to conversation history
@@ -139,7 +228,7 @@ async def chat():
             logger.info("Calling OpenAI API for general chat")
             # Use the older openai API style
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",  # or gpt-4 if available
+                model="gpt-4o-mini",  # Upgraded to GPT-4o mini for better conversation
                 messages=conversation,
                 max_tokens=1000,
                 temperature=0.7
@@ -196,19 +285,28 @@ async def search(query=None, session_id=None):
         
         # Always try OpenAI first for structured extraction
         prompt = f"""Extract search information from this query: "{user_query}"
-        Format your response EXACTLY like this, with ONLY these three lines:
-        amenity: [the specific type of place or business being sought, e.g., 'cafe', 'restaurant', 'park']
-        requirements: [specific requirements, preferences, or criteria mentioned, e.g., 'dog-friendly', 'outdoor seating', 'cheap']
+        
+        This is part of a conversation about places in Sydney. The user may be asking about specific types of venues or establishments.
+        
+        Pay special attention to the EXACT type of place being requested. For example:
+        - "beer garden" should be extracted as the exact amenity, not just "restaurant" or "bar"
+        - "dog friendly cafe" should extract "cafe" as the amenity and "dog-friendly" as the requirement
+        - "family restaurant in Newtown" should extract "restaurant" as the amenity and "family-friendly" as the requirement
+        
+        Format your response EXACTLY like this:
+        amenity: [the EXACT type of place being sought. Examples: "beer garden", "cafe", "restaurant", "pub", etc. Be as specific as possible and match the user's words exactly. If not clearly specified, write 'not specified']
+        requirements: [specific requirements or criteria mentioned, e.g., 'dog-friendly', 'outdoor seating', 'wifi'. If not mentioned, write 'not specified']
         location: [the specific suburb, area, or 'Sydney' if general. Use 'default' ONLY if absolutely no location mentioned.]
+        follow_up: [yes/no - indicate if this is a follow-up question that references a previous query]
         """
         
         logger.info(f"[Search] Using OpenAI FIRST to extract search terms from query: '{user_query}'")
         
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o-mini",  # Upgraded to GPT-4o mini for better context understanding
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant that extracts search criteria (amenity, requirements, location) from user queries about finding places."},
+                    {"role": "system", "content": "You are a helpful assistant that extracts search criteria (amenity, requirements, location) from user queries about finding places. You're especially good at recognizing follow-up questions that reference previous search contexts."},
                     {"role": "user", "content": prompt}
                 ]
             )
@@ -222,7 +320,7 @@ async def search(query=None, session_id=None):
                     key, value = line.split(': ', 1)
                     # Convert string 'None' or empty brackets to empty string
                     value_cleaned = value.strip().lower()
-                    if value_cleaned == 'none' or value_cleaned == '[none]' or value_cleaned == '[]':
+                    if value_cleaned == 'none' or value_cleaned == '[none]' or value_cleaned == '[]' or value_cleaned == 'not specified':
                         value = ''
                     else:
                         value = value.strip().strip('[]') # Keep original case unless empty
@@ -231,10 +329,170 @@ async def search(query=None, session_id=None):
             initial_search_terms = extracted.get('amenity', '')
             initial_requirements = extracted.get('requirements', '')
             initial_location_query = extracted.get('location', 'default') # Default if not found
+            is_follow_up = extracted.get('follow_up', '').lower() == 'yes'
             
             logger.info(f"[Search] OpenAI Extracted Amenity: '{initial_search_terms}'")
             logger.info(f"[Search] OpenAI Extracted Requirements: '{initial_requirements}'")
             logger.info(f"[Search] OpenAI Extracted Location: '{initial_location_query}'")
+            logger.info(f"[Search] OpenAI Detected Follow-up: {is_follow_up}")
+            
+            # Direct follow-up pattern detection
+            if not is_follow_up and not initial_search_terms:
+                # Check for common follow-up patterns that might have been missed by OpenAI
+                follow_up_patterns = [
+                    r'what about',
+                    r'how about',
+                    r'any in',
+                    r'what\'s in',
+                    r'similar in'
+                ]
+                
+                for pattern in follow_up_patterns:
+                    if re.search(pattern, user_query.lower()):
+                        is_follow_up = True
+                        logger.info(f"[Search] Manual pattern detection identified follow-up: '{pattern}' in '{user_query}'")
+                        break
+            
+            # If this appears to be a follow-up question or is missing search terms but has location
+            if (is_follow_up or (not initial_search_terms or initial_search_terms == 'not specified')) and session_id:
+                logger.info(f"[Search] Detected likely follow-up question. Looking for context in conversation history.")
+                
+                # Initialize variables for context tracking
+                previous_search_terms = None
+                previous_requirements = None
+                use_conversation_history = True
+                
+                # First check the search context cache for this session
+                if session_id in search_context_cache:
+                    cached_context = search_context_cache[session_id]
+                    # Only use cache if it's relatively recent (within last 30 minutes)
+                    if datetime.now().timestamp() - cached_context['timestamp'] < 1800:
+                        logger.info(f"[Search] Found recent search context in cache for session {session_id}")
+                        if not initial_search_terms or initial_search_terms == 'not specified':
+                            initial_search_terms = cached_context['search_terms']
+                            logger.info(f"[Search] Using cached search terms: '{initial_search_terms}'")
+                        
+                        if not initial_requirements or initial_requirements == 'not specified':
+                            initial_requirements = cached_context['requirements']
+                            logger.info(f"[Search] Using cached requirements: '{initial_requirements}'")
+                        
+                        # No need to continue with conversation history search
+                        use_conversation_history = False
+                    else:
+                        logger.info(f"[Search] Found cached context but it's too old, searching conversation history instead")
+                
+                # If we don't have cached context or it's too old, check conversation history
+                if use_conversation_history:
+                    try:
+                        # Get conversation history
+                        conversation = conversation_manager.get_conversation(session_id)
+                        
+                        # Find the most recent user and assistant interaction with search context
+                        for msg in reversed(conversation):
+                            # Skip this current message
+                            if msg['role'] == 'user' and msg['content'] == user_query:
+                                continue
+                                
+                            if msg['role'] == 'assistant' and 'I found some places matching your search' in msg['content']:
+                                # Found an assistant response with search results
+                                logger.info(f"[Search] Found previous assistant response with search results")
+                                
+                                # Look for the previous user query to get the context
+                                prev_user_query = None
+                                for prev_msg in reversed(conversation):
+                                    if prev_msg['role'] == 'user' and prev_msg['content'] != user_query:
+                                        prev_user_query = prev_msg['content'].lower()
+                                        logger.info(f"[Search] Found previous user query: '{prev_user_query}'")
+                                        break
+                                
+                                # Extract search terms from previous user query
+                                if prev_user_query:
+                                    # Look for specific search terms in the OpenAI response to that query
+                                    # Go through conversation to find the OpenAI extracted terms for that query
+                                    last_query_amenity = None
+                                    last_query_requirements = None
+                                    
+                                    for prev_log in logger.handlers[0].baseFilename:
+                                        if f"[Search] OpenAI Extracted Amenity: '{last_query_amenity}'" in prev_log and prev_user_query in prev_log:
+                                            # Found the OpenAI extraction for the previous query
+                                            try:
+                                                last_query_amenity = re.search(r"OpenAI Extracted Amenity: '([^']+)'", prev_log).group(1)
+                                                last_query_requirements = re.search(r"OpenAI Extracted Requirements: '([^']+)'", prev_log).group(1)
+                                                logger.info(f"[Search] Found previous query context from logs: amenity='{last_query_amenity}', requirements='{last_query_requirements}'")
+                                                break
+                                            except:
+                                                pass
+                                    
+                                    # Use the found terms or fallback to pattern matching if needed
+                                    if last_query_amenity and last_query_amenity != 'not specified':
+                                        previous_search_terms = last_query_amenity
+                                        logger.info(f"[Search] Using previous search term from logs: '{previous_search_terms}'")
+                                    else:
+                                        # Fallback to pattern detection
+                                        if 'burger' in prev_user_query:
+                                            previous_search_terms = 'burger place'
+                                        elif 'beer garden' in prev_user_query or 'pub' in prev_user_query:
+                                            previous_search_terms = 'beer garden'
+                                        elif 'cafe' in prev_user_query or 'coffee' in prev_user_query:
+                                            previous_search_terms = 'cafe'
+                                        elif 'restaurant' in prev_user_query or 'food' in prev_user_query:
+                                            previous_search_terms = 'restaurant'
+                                        elif 'bar' in prev_user_query:
+                                            previous_search_terms = 'bar'
+                                        else:
+                                            # Check for other common amenities
+                                            amenity_patterns = [
+                                                (r'park', 'park'),
+                                                (r'gym', 'gym'),
+                                                (r'shop', 'shopping'),
+                                                (r'store', 'store'),
+                                                (r'market', 'market'),
+                                                (r'library', 'library'),
+                                                (r'pizza', 'pizza place'),
+                                                (r'sushi', 'sushi restaurant'),
+                                                (r'thai', 'thai restaurant'),
+                                                (r'italian', 'italian restaurant'),
+                                                (r'chinese', 'chinese restaurant'),
+                                                (r'indian', 'indian restaurant')
+                                            ]
+                                            
+                                            for pattern, term in amenity_patterns:
+                                                if re.search(pattern, prev_user_query):
+                                                    previous_search_terms = term
+                                                    break
+                                    
+                                    # Do the same for requirements
+                                    if last_query_requirements and last_query_requirements != 'not specified':
+                                        previous_requirements = last_query_requirements
+                                        logger.info(f"[Search] Using previous requirements from logs: '{previous_requirements}'")
+                                    else:
+                                        # Check for specific requirements
+                                        if 'dog' in prev_user_query or 'pet' in prev_user_query:
+                                            previous_requirements = 'dog-friendly'
+                                        elif 'family' in prev_user_query or 'kid' in prev_user_query or 'child' in prev_user_query:
+                                            previous_requirements = 'family-friendly'
+                                        elif 'wifi' in prev_user_query or 'internet' in prev_user_query:
+                                            previous_requirements = 'wifi'
+                                
+                                # If we couldn't determine specifics, set a default
+                                if not previous_search_terms:
+                                    previous_search_terms = 'places'
+                                    
+                                logger.info(f"[Search] Extracted search context from previous conversation: '{previous_search_terms}'")
+                                break
+                        
+                        # Apply previous context if found
+                        if previous_search_terms:
+                            if not initial_search_terms or initial_search_terms == 'not specified':
+                                initial_search_terms = previous_search_terms
+                                logger.info(f"[Search] Using previous search term from conversation: '{initial_search_terms}'")
+                            
+                            if (not initial_requirements or initial_requirements == 'not specified') and previous_requirements:
+                                initial_requirements = previous_requirements
+                                logger.info(f"[Search] Using previous requirements from conversation: '{initial_requirements}'")
+                    
+                    except Exception as e:
+                        logger.error(f"[Search] Error retrieving conversation context: {str(e)}")
 
         except Exception as openai_error:
             logger.error(f"[Search] OpenAI extraction failed: {openai_error}", exc_info=True)
@@ -265,8 +523,77 @@ async def search(query=None, session_id=None):
              search_terms = f"{search_terms} family friendly" if search_terms else "family friendly"
              
         # Final fallback for search terms
-        if not search_terms:
-            search_terms = "places"
+        if not search_terms or search_terms == '-':
+            # For follow-up questions or vague queries, default to a broad search term
+            # Try to preserve context from previous queries if available
+            if 'cafe' in user_query_lower or 'coffee' in user_query_lower:
+                search_terms = "cafe"
+            elif 'restaurant' in user_query_lower or 'food' in user_query_lower or 'eat' in user_query_lower:
+                search_terms = "restaurant"
+            elif 'bar' in user_query_lower or 'pub' in user_query_lower or 'drink' in user_query_lower or 'beer' in user_query_lower:
+                search_terms = "bar"
+            elif 'what about' in user_query_lower or 'how about' in user_query_lower or 'any in' in user_query_lower or 'similar' in user_query_lower:
+                # Strong indicator of a follow-up question - look for the most recent search in history
+                if session_id:
+                    try:
+                        logger.info("[Search] Detected follow-up based on phrasing. Checking history for context.")
+                        conversation = conversation_manager.get_conversation(session_id)
+                        
+                        # Find the most recent search query
+                        for msg in reversed(conversation):
+                            if msg['role'] == 'user' and msg['content'] != user_query:
+                                last_query = msg['content'].lower()
+                                logger.info(f"[Search] Found previous user query: '{last_query}'")
+                                
+                                # Extract context from the last question
+                                if 'beer garden' in last_query or 'pub' in last_query:
+                                    search_terms = "beer garden"
+                                    if 'dog' in last_query:
+                                        if not requirements:
+                                            requirements = "dog-friendly"
+                                    break
+                                elif 'cafe' in last_query or 'coffee' in last_query:
+                                    search_terms = "cafe"
+                                    if 'wifi' in last_query:
+                                        if not requirements:
+                                            requirements = "wifi"
+                                    break
+                                elif 'restaurant' in last_query or 'food' in last_query or 'eat' in last_query:
+                                    search_terms = "restaurant"
+                                    break
+                                elif 'bar' in last_query:
+                                    search_terms = "bar"
+                                    break
+                    except Exception as e:
+                        logger.error(f"[Search] Error finding previous context: {str(e)}")
+            elif session_id:
+                # Look at conversation history for context
+                try:
+                    conversation = conversation_manager.get_conversation(session_id)
+                    for msg in reversed(conversation):
+                        if msg['role'] == 'user' and any(term in msg['content'].lower() for term in 
+                                                    ['cafe', 'restaurant', 'bar', 'coffee', 'food', 'beer garden']):
+                            # Extract search context from previous questions
+                            last_query = msg['content'].lower()
+                            if 'beer garden' in last_query or 'pub' in last_query:
+                                search_terms = "beer garden" 
+                                break
+                            elif 'cafe' in last_query or 'coffee' in last_query:
+                                search_terms = "cafe"
+                                break
+                            elif 'restaurant' in last_query or 'food' in last_query:
+                                search_terms = "restaurant"
+                                break
+                            elif 'bar' in last_query:
+                                search_terms = "bar"
+                                break
+                except Exception as e:
+                    logger.error(f"[Search] Error getting conversation context: {str(e)}")
+            
+            # If still no search term, default to places
+            if not search_terms or search_terms == '-':
+                search_terms = "places" 
+            
             logger.info(f"[Search] Using final fallback search term: '{search_terms}'")
 
         logger.info(f"[Search] Final Search Terms for Google: '{search_terms}'")
@@ -295,7 +622,12 @@ async def search(query=None, session_id=None):
                     # Determine specificity and radius based on result type
                     types = geocode_result[0].get('types', [])
                     if any(t in types for t in ['locality', 'sublocality', 'neighborhood']):  # Suburb level
-                        search_radius = 1500 
+                        # More focused radius for specific suburbs
+                        if location_query.lower() in ['newtown', 'surry hills', 'marrickville', 'enmore', 'erskineville']:
+                            search_radius = 800  # Smaller radius for dense inner-city suburbs
+                            logger.info(f"[Search] Using smaller radius for dense inner-city suburb: {location_query}")
+                        else:
+                            search_radius = 1500 
                         location_specificity = "geocoded_suburb"
                     elif any(t in types for t in ['administrative_area_level_1', 'country']):  # Very broad
                         search_radius = 10000  # Use a larger radius for broad areas like 'Sydney'
@@ -323,9 +655,28 @@ async def search(query=None, session_id=None):
 
         # --- Search using Google Places API only ---
         try:
+            # Construct better search terms by ensuring we include the requirements
+            search_query = search_terms
+            
+            # Special handling for specific venue types
+            if search_terms.lower() == 'beer garden':
+                # Beer gardens are often in pubs, so include both terms
+                search_query = "pub beer garden"
+                logger.info(f"[Search] Enhanced search query for beer garden: '{search_query}'")
+            elif search_terms.lower() == 'pub':
+                # When looking for pubs, prioritize those with beer gardens
+                if 'beer garden' in user_query_lower or 'outdoor' in user_query_lower:
+                    search_query = "pub beer garden"
+                    logger.info(f"[Search] Enhanced pub search to focus on beer gardens: '{search_query}'")
+            
+            # Make sure dog-friendly requirement is included in search terms
+            if requirements == 'dog-friendly' and 'dog' not in search_query.lower():
+                search_query = f"{search_query} dog friendly"
+                logger.info(f"[Search] Added dog-friendly requirement to search query: '{search_query}'")
+            
             # Fetch places from Google Places API
-            logger.info(f"[Search] Fetching places from Google Maps API: {search_terms}")
-            google_places = await _fetch_google_nearby(location, search_radius, search_terms)
+            logger.info(f"[Search] Fetching places from Google Maps API: {search_query}")
+            google_places = await _fetch_google_nearby(location, search_radius, search_query)
             
             if not google_places:
                 logger.warning(f"[Search] No places found from Google Maps API.")
@@ -371,7 +722,8 @@ Places:
                 name = place.get('name', 'Unknown')
                 address = place.get('formatted_address', 'Address unknown')
                 rating = place.get('rating', 'No rating')
-                types = ', '.join(place.get('types', ['Unknown']))
+                type_list = place.get('type', [])
+                types = ', '.join(type_list if isinstance(type_list, list) else [str(type_list)])
                 
                 # Add details to prompt
                 analysis_prompt += f"""
@@ -382,39 +734,51 @@ Places:
    """
                 
                 # Add reviews if available
-                reviews = place.get('reviews', [])
-                if reviews:
+                review_list = place.get('review', [])
+                if review_list:
                     analysis_prompt += "   Recent reviews:\n"
-                    for j, review in enumerate(reviews[:3]):  # Only include up to 3 reviews
+                    for j, review in enumerate(review_list[:3]):  # Only include up to 3 reviews
                         review_text = review.get('text', '').replace('\n', ' ')[:100]  # Truncate long reviews
                         review_rating = review.get('rating', 0)
                         analysis_prompt += f"   - {review_text}... (Rating: {review_rating}/5)\n"
                         
-            # Add instructions for analysis
-            analysis_prompt += """
-Based on the user's query, provide:
-1. A summary of the best options
-2. Highlights of each place relevant to the query
-3. Any notable comparisons between options
+            # Add instructions for analysis - more conversational approach
+            analysis_prompt += f"""
+Based on the user's query: "{user_query}", provide:
+1. A friendly, conversational summary of the best options - imagine you're telling a friend about these places
+2. Specific highlights of each place that make it special, particularly focusing on {requirements if requirements else 'what makes them great'}
+3. Casual comparisons between options to help the user decide
 
-Format your response as JSON with these exact fields:
-{
-  "summary": "A concise summary of the best matches for the query",
+The user is looking for: "{search_terms}"{' that are ' + requirements if requirements else ''}. 
+Only include places that actually match what they're looking for.
+
+Format your response as JSON with these fields:
+{{
+  "summary": "A friendly, conversational summary of the best places - write as if chatting with a friend",
   "highlights": [
-    {"place_name": "Name of Place 1", "key_features": ["Feature 1", "Feature 2"]},
-    {"place_name": "Name of Place 2", "key_features": ["Feature 1", "Feature 2"]}
+    {{"place_name": "Name of Place 1", "key_features": ["A specific standout feature described conversationally", "Another great thing about this place"]}},
+    {{"place_name": "Name of Place 2", "key_features": ["What makes this place special", "Another noteworthy aspect"]}}
   ],
-  "comparisons": ["Comparison point 1", "Comparison point 2"]
-}
+  "comparisons": ["A casual comparison between places, like 'If you prefer a relaxed vibe, X is better than Y'", "Another helpful comparison"]
+}}
 """
             
             # Get analysis from OpenAI
             try:
                 logger.info("[Search] Calling OpenAI for place analysis")
+                
+                # Enhanced system message with the specific search context
+                system_message = "You are a friendly, conversational assistant that analyzes places for users in a helpful and personable way. Write as if you're talking to a friend rather than presenting a formal analysis."
+                if requirements:
+                    system_message += f" Pay special attention to the '{requirements}' requirement and highlight venues that truly excel at this."
+                if search_terms != "places":
+                    system_message += f" Focus specifically on whether these places are excellent {search_terms}s, sharing what makes them special."
+                system_message += " While your response will be structured as JSON, the content should be warm, helpful and engaging."
+                
                 analysis_response = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o-mini",  # Upgraded to GPT-4o mini for better analysis
                     messages=[
-                        {"role": "system", "content": "You are a helpful assistant that analyzes places based on user queries."},
+                        {"role": "system", "content": system_message},
                         {"role": "user", "content": analysis_prompt}
                     ],
                     temperature=0.7
@@ -446,12 +810,34 @@ Format your response as JSON with these exact fields:
                         "comparisons": []
                     }
                     
+                # Save the search context to the cache for future reference
+                if session_id:
+                    search_context_cache[session_id] = {
+                        'timestamp': datetime.now().timestamp(),
+                        'search_terms': search_terms,
+                        'requirements': requirements,
+                        'original_query': user_query
+                    }
+                    logger.info(f"[Search] Saved search context to cache for session {session_id}")
+                    
                 # Add analysis to conversation history if session provided
                 if session_id:
-                    conversation_manager.add_message(session_id, 'assistant', 
-                                                   f"I found some places matching your search. {analysis_data.get('summary', '')}")
+                    # Create a more conversational response style
+                    conversational_response = _create_conversational_response(analysis_data, places_with_details, search_terms, requirements, location_query)
+                    
+                    # Add the conversational response to conversation history
+                    conversation_manager.add_message(session_id, 'assistant', conversational_response)
+                    
+                    # Return the conversational response to match the chat style
+                    request_duration = (datetime.now() - request_start_time).total_seconds()
+                    logger.info(f"=== Search End === Total Duration: {request_duration:.2f}s")
+                    
+                    # For the response, return the conversational format
+                    return jsonify({'response': conversational_response, 
+                                  'places': places_with_details,
+                                  'analysis': analysis_data})
                 
-                # Prepare final response
+                # Prepare final response (non-conversational, for direct API use)
                 final_data = {
                     'places': places_with_details,
                     'analysis': analysis_data,
@@ -519,12 +905,24 @@ async def _fetch_place_details(place_id: str) -> Optional[Dict]:
             None,
             lambda: gmaps.place(
                 place_id=place_id,
-                fields=['name', 'formatted_address', 'rating', 'types', 'reviews', 
-                        'photos', 'website', 'price_level', 'opening_hours', 
+                fields=['name', 'formatted_address', 'rating', 'type', 'review', 
+                        'photo', 'website', 'price_level', 'opening_hours', 
                         'formatted_phone_number', 'geometry']
             )
         )
         result = details_result.get('result', {})
+        
+        # Ensure geometry.location is properly structured for the frontend
+        if 'geometry' in result and 'location' in result['geometry']:
+            # Leave geometry.location as is for the frontend to access
+            pass
+        else:
+            # Add a default location if none exists
+            logger.warning(f"[Search] Place {result.get('name', 'Unknown')} has no geometry data. Using default.")
+            result['geometry'] = {
+                'location': {'lat': -33.8978149, 'lng': 151.1785003}  # Default to Newtown
+            }
+            
         logger.info(f"[Search] Successfully fetched details for: {result.get('name', 'Unknown')}")
         return result
     except Exception as e:
@@ -534,6 +932,104 @@ async def _fetch_place_details(place_id: str) -> Optional[Dict]:
 @app.teardown_appcontext
 async def teardown_session(exception=None):
     await data_manager.close()
+
+def _create_conversational_response(analysis_data, places, search_terms, requirements, location):
+    """Create a friendly, conversational response like you're talking to a friend."""
+    
+    # Get data from analysis
+    summary = analysis_data.get('summary', '')
+    highlights = analysis_data.get('highlights', [])
+    comparisons = analysis_data.get('comparisons', [])
+    
+    # Create a friendly, casual intro
+    if location and location != 'default':
+        if requirements:
+            intro = f"Here are some {requirements} {search_terms} in {location.title()}: "
+        else:
+            intro = f"I found some great {search_terms} in {location.title()} for you: "
+    else:
+        if requirements:
+            intro = f"Here are some {requirements} {search_terms} for you: "
+        else: 
+            intro = f"I found some great {search_terms} spots for you: "
+    
+    # Start building the casual, conversational response
+    response = intro
+    
+    # Only add the summary if it's a good one
+    if summary and len(summary) < 150:
+        response = summary + "\n\n"
+    
+    # Add top recommendations in a conversational, personable way
+    if places and len(places) > 0:
+        top_places = places[:4]  # Limit to top 4 for conversation
+        
+        for i, place in enumerate(top_places):
+            name = place.get('name', 'Unknown')
+            address = place.get('formatted_address', '').split(',')[0]  # Just the street address
+            rating = place.get('rating', 'No rating')
+            
+            # Find highlights for this place
+            place_highlight = next((h for h in highlights if h.get('place_name') == name), None)
+            features = place_highlight.get('key_features', []) if place_highlight else []
+            
+            # Build a casual, conversational description
+            response += f"**{name}** - "
+            
+            # Add a casual description based on features
+            if features:
+                # Convert feature lists to casual speaking
+                if len(features) >= 2:
+                    response += f"{features[0]} and {features[1].lower()}. "
+                elif len(features) == 1:
+                    response += f"{features[0]}. "
+                    
+                # Add a casual comment about the place based on rating
+                if rating and float(rating) >= 4.5:
+                    response += f"People absolutely love this place! "
+                elif rating and float(rating) >= 4.0:
+                    response += f"It's really well-rated. "
+                    
+            else:
+                # Generic comment if no features
+                if rating:
+                    if float(rating) >= 4.5:
+                        response += f"This place is highly rated at {rating}/5! "
+                    elif float(rating) >= 4.0:
+                        response += f"Good spot with {rating}/5 stars. "
+                    else:
+                        response += f"Located at {address}. "
+            
+            # Add location in a casual way
+            if "Road" in address or "Street" in address or "Lane" in address:
+                response += f"You'll find it on {address}. "
+            else:
+                response += f"It's at {address}. "
+            
+            response += "\n\n"
+    
+    # Add one comparison if available, in a conversational way
+    if comparisons and len(comparisons) > 0:
+        comparison = comparisons[0]
+        # Make the comparison more conversational if it's not already
+        if not any(casual_word in comparison.lower() for casual_word in ["if you're", "perfect for", "better if", "great for"]):
+            response += f"Just so you know, {comparison.lower()}\n\n"
+        else:
+            response += f"{comparison}\n\n"
+    
+    # Add a casual closing that invites further questions
+    closings = [
+        "Let me know if you want to know more about any of these places!",
+        "Hope that helps! Any of these catch your eye?",
+        "Do any of these sound good to you?",
+        "Would you like more details about any of these spots?",
+        "Have you been to any of these before?"
+    ]
+    
+    import random
+    response += random.choice(closings)
+    
+    return response
 
 if __name__ == '__main__':
     print("Starting app on http://localhost:8080")

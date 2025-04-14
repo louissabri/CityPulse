@@ -41,34 +41,29 @@
         <div class="docs-header">
             <h1>CityPulse API Documentation</h1>
             <p class="docs-intro">
-                The CityPulse API provides access to intelligent local recommendations powered by multiple data sources including Google Places, Reddit discussions, and local news.
+                The CityPulse API provides access to intelligent local recommendations powered by Google Maps with AI-enhanced analysis. The system uses advanced natural language processing to understand user queries and deliver conversational, helpful responses.
             </p>
         </div>
 
         <section class="docs-section">
             <h2>Overview</h2>
-            <p>The API uses a combination of AI and multiple data sources to provide comprehensive local recommendations:</p>
+            <p>The API uses a combination of AI and Google Places data to provide comprehensive local recommendations:</p>
             <div class="process-flow">
                 <div class="process-step">
                     <h3>1. Query Processing</h3>
-                    <p>Uses OpenAI to understand user queries and extract search criteria, requirements, and location information.</p>
+                    <p>Uses advanced NLP techniques and OpenAI to detect search intent, understand user queries and extract search criteria, requirements, and location information.</p>
                 </div>
                 <div class="process-step">
                     <h3>2. Location Resolution</h3>
                     <p>Resolves locations using Google Maps API, with built-in support for Sydney neighborhoods and landmarks.</p>
                 </div>
                 <div class="process-step">
-                    <h3>3. Data Gathering</h3>
-                    <p>Collects data from multiple sources:</p>
-                    <ul>
-                        <li>Google Places API for business information</li>
-                        <li>Reddit discussions for local insights</li>
-                        <li>Local news and articles</li>
-                    </ul>
+                    <h3>3. Data Collection</h3>
+                    <p>Collects place data from Google Maps API, including locations, ratings, reviews, and business details.</p>
                 </div>
                 <div class="process-step">
-                    <h3>4. Analysis & Response</h3>
-                    <p>AI-powered analysis combines all data sources to provide comprehensive recommendations.</p>
+                    <h3>4. AI Analysis</h3>
+                    <p>OpenAI analyzes venues to identify the best options and highlights key features in a conversational format.</p>
                 </div>
             </div>
         </section>
@@ -77,71 +72,84 @@
             <h2>Endpoints</h2>
             
             <div class="endpoint">
-                <h3>Search Places</h3>
-                <code class="endpoint-url">POST /search</code>
+                <h3>Generate Session ID</h3>
+                <code class="endpoint-url">POST /generate_session_id</code>
+                <p>Creates a unique session ID for maintaining conversation context across requests.</p>
                 
                 <h4>Request Format</h4>
-                <pre><code>{
-    "query": "string" // Your search query (e.g., "Best coffee in Surry Hills")
-}</code></pre>
+                <pre><code>// No payload required
+{}</code></pre>
 
                 <h4>Response Format</h4>
                 <pre><code>{
+    "session_id": "string" // Unique session identifier
+}</code></pre>
+            </div>
+            
+            <div class="endpoint">
+                <h3>Chat</h3>
+                <code class="endpoint-url">POST /chat</code>
+                <p>The primary endpoint for all interactions. Intelligently detects if a message is a search query and responds accordingly.</p>
+                
+                <h4>Request Format</h4>
+                <pre><code>{
+    "message": "string", // Your message (e.g., "Dog friendly beer gardens in Newtown")
+    "session_id": "string" // Your session ID (required)
+}</code></pre>
+
+                <h4>Response Format for General Chat</h4>
+                <pre><code>{
+    "response": "string" // Text response from the assistant
+}</code></pre>
+
+                <h4>Response Format for Detected Place Searches</h4>
+                <pre><code>{
+    "response": "string", // Conversational summary of search results (only if session_id provided)
     "places": [
         {
             "name": "string",
-            "location": {
-                "lat": float,
-                "lng": float
-            },
-            "address": "string",
+            "formatted_address": "string",
             "rating": float,
-            "total_ratings": integer,
-            "reviews": [
+            "type": ["string"],
+            "review": [
                 {
                     "rating": float,
                     "text": "string",
-                    "time": "string",
-                    "author": "string"
+                    "author_name": "string"
                 }
             ],
-            "opening_hours": ["string"],
             "website": "string",
-            "phone": "string",
             "price_level": integer,
-            "types": ["string"],
-            "place_id": "string",
-            "additional_insights": {
-                "recent_mentions": [
-                    {
-                        "source": "string",
-                        "title": "string",
-                        "excerpt": "string",
-                        "date": "string"
-                    }
-                ],
-                "relevant_discussions": [
-                    {
-                        "title": "string",
-                        "url": "string",
-                        "comments": [
-                            {
-                                "text": "string",
-                                "score": integer,
-                                "date": "string"
-                            }
-                        ]
-                    }
-                ]
-            }
+            "opening_hours": {
+                "open_now": boolean,
+                "periods": [...]
+            },
+            "formatted_phone_number": "string",
+            "geometry": {
+                "location": {
+                    "lat": float,
+                    "lng": float
+                }
+            },
+            "place_id": "string"
         }
     ],
-    "search_terms": "string",
-    "location": "string",
-    "summary": "string",
-    "highlights": "string",
-    "social_proof": "string",
-    "considerations": "string"
+    "analysis": {
+        "summary": "string",
+        "highlights": [
+            {
+                "place_name": "string",
+                "key_features": ["string"]
+            }
+        ],
+        "comparisons": ["string"]
+    },
+    "query": {
+        "original": "string",
+        "amenity": "string",
+        "requirements": "string",
+        "location": "string"
+    }
 }</code></pre>
             </div>
         </section>
@@ -149,21 +157,37 @@
         <section class="docs-section">
             <h2>Example Usage</h2>
             <div class="example">
-                <h3>cURL Example</h3>
+                <h3>1. Generate Session ID</h3>
                 <pre><code>curl -X POST \
-    http://localhost:8080/search \
+    http://localhost:8080/generate_session_id \
+    -H 'Content-Type: application/json'</code></pre>
+
+                <h3>2. Send a Search Query</h3>
+                <pre><code>curl -X POST \
+    http://localhost:8080/chat \
     -H 'Content-Type: application/json' \
     -d '{
-        "query": "Best coffee in Surry Hills"
+        "message": "Dog friendly beer gardens in Newtown",
+        "session_id": "your_session_id_here"
     }'</code></pre>
 
-                <h3>Python Example</h3>
+                <h3>Python Example (Complete Flow)</h3>
                 <pre><code>import requests
 import json
 
-url = "http://localhost:8080/search"
+# Step 1: Generate session ID
+session_response = requests.post(
+    "http://localhost:8080/generate_session_id",
+    headers={"Content-Type": "application/json"}
+)
+session_data = session_response.json()
+session_id = session_data.get("session_id")
+
+# Step 2: Send a query
+url = "http://localhost:8080/chat"
 payload = {
-    "query": "Best coffee in Surry Hills"
+    "message": "Dog friendly beer gardens in Newtown",
+    "session_id": session_id
 }
 headers = {
     "Content-Type": "application/json"
@@ -172,18 +196,47 @@ headers = {
 response = requests.post(url, json=payload, headers=headers)
 results = response.json()
 
-print(json.dumps(results, indent=2))</code></pre>
+# Step 3: Process the results
+if "places" in results:
+    # This was processed as a search query
+    places = results.get("places", [])
+    conversation_response = results.get("response", "")
+    
+    print(f"Conversation response: {conversation_response}")
+    print(f"Found {len(places)} places")
+else:
+    # This was processed as a general chat message
+    print(f"Response: {results.get('response')}")
+</code></pre>
             </div>
         </section>
 
         <section class="docs-section">
-            <h2>Rate Limits</h2>
-            <p>The API is currently rate-limited to protect our services and ensure fair usage:</p>
+            <h2>Search Query Features</h2>
+            <p>The system intelligently detects search queries using multiple techniques:</p>
             <ul>
-                <li>100 requests per hour per IP address</li>
-                <li>2,000 requests per day per IP address</li>
+                <li><strong>AI-based intent detection</strong> for complex queries</li>
+                <li><strong>Pattern recognition</strong> for locations and amenities</li>
+                <li><strong>Context-aware</strong> responses that remember previous search terms</li>
+                <li><strong>Auto-extraction</strong> of place types, requirements, and locations</li>
             </ul>
-            <p>For higher limits or commercial usage, please contact us.</p>
+            <p>Examples of queries that are automatically handled:</p>
+            <ul>
+                <li>"Dog friendly beer gardens in Newtown"</li>
+                <li>"Coffee shops with wifi near Sydney CBD"</li>
+                <li>"Italian restaurants in Surry Hills"</li>
+                <li>"What about in Marrickville?" (as a follow-up to a previous search)</li>
+            </ul>
+        </section>
+
+        <section class="docs-section">
+            <h2>Notes on Rate Limits</h2>
+            <p>This service uses external APIs with their own rate limits:</p>
+            <ul>
+                <li>OpenAI API rate limits apply to all queries</li>
+                <li>Google Maps API limits apply to location searches</li>
+                <li>Session data is cleaned up after 7 days of inactivity</li>
+            </ul>
         </section>
     </div>
 

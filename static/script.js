@@ -322,18 +322,30 @@ async function sendMessage() {
             // Format place data into a nice HTML display
             let placesHTML = `
                 <div class="search-summary">
-                    <p>${data.summary}</p>
+                    <p>${data.analysis && data.analysis.summary ? data.analysis.summary : 'Places matching your search:'}</p>
                 </div>
             `;
             
             // Add highlights if available
-            if (data.highlights) {
-                placesHTML += `
-                    <div class="highlights">
-                        <h4>Highlights</h4>
-                        <p>${data.highlights}</p>
-                    </div>
-                `;
+            if (data.analysis && data.analysis.highlights && data.analysis.highlights.length > 0) {
+                placesHTML += `<div class="highlights"><h4>Highlights</h4><ul>`;
+                
+                data.analysis.highlights.forEach(highlight => {
+                    placesHTML += `<li><strong>${highlight.place_name}:</strong> ${highlight.key_features.join(', ')}</li>`;
+                });
+                
+                placesHTML += `</ul></div>`;
+            }
+            
+            // Add comparisons if available
+            if (data.analysis && data.analysis.comparisons && data.analysis.comparisons.length > 0) {
+                placesHTML += `<div class="comparisons"><h4>Comparisons</h4><ul>`;
+                
+                data.analysis.comparisons.forEach(comparison => {
+                    placesHTML += `<li>${comparison}</li>`;
+                });
+                
+                placesHTML += `</ul></div>`;
             }
             
             // Start the grid for place cards
@@ -346,9 +358,9 @@ async function sendMessage() {
                                'Rating N/A';
                 placesHTML += `
                     <div class="place-card">
-                        <h4>${place.name}</h4>
-                        <p class="address">${place.address}</p>
-                        <p class="rating">${rating} ${place.total_ratings ? `(${place.total_ratings} reviews)` : ''}</p>
+                        <h4>${place.name || 'Unknown'}</h4>
+                        <p class="address">${place.formatted_address || 'Address unavailable'}</p>
+                        <p class="rating">${rating}</p>
                         ${place.website ? `<p><a href="${place.website}" target="_blank">Website</a></p>` : ''}
                     </div>
                 `;
@@ -402,8 +414,12 @@ async function sendMessage() {
             
             // Add markers for each place
             data.places.forEach((place, index) => {
-                if (place.location && place.location.lat && place.location.lng) {
-                    const position = new google.maps.LatLng(place.location.lat, place.location.lng);
+                // Extract location from geometry
+                if (place.geometry && place.geometry.location) {
+                    const position = new google.maps.LatLng(
+                        place.geometry.location.lat,
+                        place.geometry.location.lng
+                    );
                     
                     // Create marker
                     const marker = new google.maps.Marker({
@@ -420,9 +436,9 @@ async function sendMessage() {
                     // Create info window
                     const infoContent = `
                         <div class="info-window">
-                            <h4>${place.name}</h4>
-                            <p>${place.address}</p>
-                            <p>Rating: ${place.rating}★ (${place.total_ratings} reviews)</p>
+                            <h4>${place.name || 'Unknown'}</h4>
+                            <p>${place.formatted_address || 'Address unavailable'}</p>
+                            <p>Rating: ${place.rating || 'N/A'}</p>
                             ${place.website ? `<p><a href="${place.website}" target="_blank">Website</a></p>` : ''}
                         </div>
                     `;
@@ -460,9 +476,9 @@ async function sendMessage() {
                         listItem.innerHTML = `
                             <div class="list-marker">${index + 1}</div>
                             <div class="list-content">
-                                <h4>${place.name}</h4>
-                                <p class="address">${place.address}</p>
-                                <p class="rating">${'★'.repeat(Math.round(place.rating))}${'☆'.repeat(5 - Math.round(place.rating))} (${place.total_ratings})</p>
+                                <h4>${place.name || 'Unknown'}</h4>
+                                <p class="address">${place.formatted_address || 'Address unavailable'}</p>
+                                <p class="rating">${'★'.repeat(Math.round(place.rating || 0))}${'☆'.repeat(5 - Math.round(place.rating || 0))}</p>
                                 ${place.website ? `<p><a href="${place.website}" target="_blank">Website</a></p>` : ''}
                             </div>
                         `;
@@ -507,10 +523,7 @@ async function sendMessage() {
             // Add view toggle functionality
             setupViewToggle();
             
-            // Scroll to bottom and update search history
-            scrollToBottom();
-            
-            // Update search history
+            // Update search history but don't scroll
             const historyItem = {
                 query: query,
                 timestamp: new Date().toISOString()
@@ -527,10 +540,10 @@ async function sendMessage() {
         } else {
             // Regular message (not search results)
             addMessageToChat('assistant', data.response);
+            
+            // Only scroll for regular messages
+            scrollToBottom();
         }
-        
-        // Scroll to bottom of chat
-        scrollToBottom();
     } catch (error) {
         console.error('Error sending message:', error);
         clearInterval(typingIndicator.interval);
@@ -562,7 +575,11 @@ function addMessageToChat(role, content) {
     }
     
     chatMessages.appendChild(messageElement);
-    scrollToBottom();
+    
+    // Only scroll to bottom for user messages
+    if (role === 'user') {
+        scrollToBottom();
+    }
 }
 
 // Function to display typing indicator with cycling quirky messages
@@ -714,7 +731,7 @@ function clearConversation() {
         <h2>Welcome to CityPulse</h2>
         <p>Ask me about places in Sydney and I'll help you discover the best spots!</p>
         <div class="example-queries">
-            <button class="query-pill" onclick="useExample(this)">Best coffee in Surry Hills</button>
+            <button class="query-pill" onclick="useExample(this)">Dog friendly beer gardens in Newtown</button>
             <button class="query-pill" onclick="useExample(this)">Hidden bars in Darlinghurst</button>
             <button class="query-pill" onclick="useExample(this)">Family-friendly restaurants in Bondi</button>
         </div>

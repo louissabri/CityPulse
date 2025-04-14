@@ -117,7 +117,7 @@ class ConversationManager:
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         
-        c.execute('DELETE FROM sessions WHERE last_activity < datetime("now", "-? days")', (days,))
+        c.execute('DELETE FROM sessions WHERE last_activity < datetime("now", ? || " days")', (f'-{days}',))
         
         deleted_count = conn.total_changes
         conn.commit()
