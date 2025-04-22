@@ -79,6 +79,10 @@ def home():
 def api_docs():
     return render_template('api.html')
 
+@app.route('/how_it_works')
+def how_it_works():
+    return render_template('how_it_works.html')
+
 @app.route('/generate_session_id', methods=['POST'])
 def generate_session_id():
     """Generate a new session ID for the client."""
@@ -1033,4 +1037,4 @@ def _create_conversational_response(analysis_data, places, search_terms, require
 
 if __name__ == '__main__':
     print("Starting app on http://localhost:8080")
-    app.run(host='0.0.0.0', port=8080, debug=True) 
+    app.run(host='127.0.0.1', port=8080, debug=True) 

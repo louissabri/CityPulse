@@ -568,8 +568,101 @@ function addMessageToChat(role, content) {
     );
     
     // Check if content contains special formatting for search results
-    if (contentStr.includes('<div class="places-grid">')) {
+    if (contentStr.includes('<div class="places-grid">') || contentStr.includes('<div class="search-summary">')) {
+        // This is already formatted HTML content - use as is
         messageElement.innerHTML = contentStr;
+    } else if (role === 'assistant' && (contentStr.includes('★★★★') || contentStr.match(/(\d+\.?\s\*\*.*?\*\*)/))) {
+        // This looks like a search result but isn't formatted as HTML
+        // Format it properly with structured HTML
+        
+        // Create a container for search results
+        let formattedHTML = '<div class="search-summary"><p>' + 
+            contentStr.split('\n\n')[0] + // First paragraph as summary
+            '</p></div>';
+        
+        // Extract places
+        const lines = contentStr.split('\n');
+        let placesHtml = '<div class="places-grid">';
+        
+        let inPlacesList = false;
+        let currentPlace = {};
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            
+            // Check for places with addresses and ratings
+            if (line.match(/^[\w\s\-&']+$/) && lines[i+1] && lines[i+1].includes('★')) {
+                inPlacesList = true;
+                // If we already have a place, add it to the grid
+                if (currentPlace.name) {
+                    placesHtml += `
+                        <div class="place-card">
+                            <h4>${currentPlace.name}</h4>
+                            <p class="address">${currentPlace.address || ''}</p>
+                            <p class="rating">${currentPlace.rating || ''}</p>
+                            ${currentPlace.website ? `<p><a href="${currentPlace.website}" target="_blank">Website</a></p>` : ''}
+                        </div>
+                    `;
+                }
+                
+                // Start a new place
+                currentPlace = {
+                    name: line
+                };
+            } 
+            // Address line
+            else if (inPlacesList && currentPlace.name && line.includes('Australia')) {
+                currentPlace.address = line;
+            }
+            // Rating line
+            else if (inPlacesList && currentPlace.name && line.includes('★')) {
+                currentPlace.rating = line;
+            }
+            // Website line
+            else if (inPlacesList && currentPlace.name && line.toLowerCase().includes('website')) {
+                currentPlace.website = 'https://example.com'; // Default website link
+            }
+            // Numbered items from follow-up queries (e.g. "1. Henson Park Hotel")
+            else if (line.match(/^\d+\.\s+\*\*.*?\*\*/) || line.match(/^\d+\.\s+.*?Hotel/)) {
+                const placeName = line.replace(/^\d+\.\s+\*\*|\*\*$/g, '')
+                                      .replace(/^\d+\.\s+/, '');
+                
+                placesHtml += `
+                    <div class="place-card">
+                        <h4>${placeName}</h4>
+                        <p class="address">${lines[i+1] ? lines[i+1].trim() : ''}</p>
+                    </div>
+                `;
+                
+                // Skip the next line which is likely the address
+                if (lines[i+1] && !lines[i+1].match(/^\d+\./)) {
+                    i++;
+                }
+            }
+        }
+        
+        // Add the last place if we have one
+        if (inPlacesList && currentPlace.name) {
+            placesHtml += `
+                <div class="place-card">
+                    <h4>${currentPlace.name}</h4>
+                    <p class="address">${currentPlace.address || ''}</p>
+                    <p class="rating">${currentPlace.rating || ''}</p>
+                    ${currentPlace.website ? `<p><a href="${currentPlace.website}" target="_blank">Website</a></p>` : ''}
+                </div>
+            `;
+        }
+        
+        placesHtml += '</div>';
+        
+        // If we detected places, add the formatted HTML
+        if (inPlacesList || placesHtml.includes('<h4>')) {
+            formattedHTML += placesHtml;
+            messageElement.innerHTML = formattedHTML;
+        } else {
+            // Fall back to normal formatting
+            messageElement.innerHTML = linkedContent;
+        }
     } else {
         messageElement.innerHTML = linkedContent;
     }

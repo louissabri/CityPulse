@@ -753,6 +753,11 @@ input[type="text"]:focus {
     padding: 1rem 2rem;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .nav-brand {
@@ -847,16 +852,16 @@ input[type="text"]:focus {
 }
 
 .process-step {
-    background: var(--surface-color);
-    border: 1px solid var(--border);
+    background-color: var(--surface);
     border-radius: 8px;
     padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    position: relative;
 }
 
 .process-step h3 {
+    margin-top: 0;
     color: var(--accent);
-    margin-bottom: 1rem;
-    font-size: 1.2rem;
 }
 
 .process-step p {
@@ -1202,5 +1207,286 @@ input[type="text"]:focus {
     }
     .footer-links {
         margin-top: 0.5rem;
+    }
+}
+
+/* How It Works Page Styles */
+.docs-container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+.summary-box {
+    background-color: var(--surface);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.architecture-diagram {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.arch-component {
+    flex: 1;
+    min-width: 250px;
+    background-color: var(--surface);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.arch-component h3 {
+    margin-top: 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.process-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.process-step {
+    background-color: var(--surface);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    position: relative;
+}
+
+.process-step h3 {
+    margin-top: 0;
+    color: var(--accent);
+}
+
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.feature {
+    background-color: var(--surface);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.feature h3 {
+    margin-top: 0;
+    color: var(--accent);
+}
+
+.component-details {
+    background-color: var(--surface);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.component-details h4 {
+    margin-top: 0;
+    color: var(--accent);
+}
+
+.github-link {
+    background-color: var(--surface);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+.github-link a {
+    font-size: 1.2rem;
+    color: var(--accent);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.github-link a:hover {
+    text-decoration: underline;
+}
+
+.github-link i {
+    font-size: 1.5rem;
+}
+
+@media (max-width: 768px) {
+    .docs-container {
+        padding: 1rem;
+    }
+    
+    .architecture-diagram {
+        flex-direction: column;
+    }
+    
+    .feature-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.summary-box.technical {
+    margin-top: 1.5rem;
+    background-color: var(--surface);
+    border-left: 4px solid var(--accent);
+}
+
+.summary-box.technical ul {
+    padding-left: 1.5rem;
+    margin: 1rem 0;
+}
+
+.summary-box.technical li {
+    margin-bottom: 0.75rem;
+    line-height: 1.5;
+}
+
+.summary-box.technical strong {
+    color: var(--accent);
+}
+
+.university-info {
+    background-color: var(--surface);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border-left: 4px solid #ffcc00; /* UNSW yellow */
+}
+
+.university-info p {
+    margin-bottom: 1rem;
+}
+
+.component-details pre,
+.process-step pre {
+    background-color: var(--surface-hover);
+    border-radius: 6px;
+    padding: 1rem;
+    overflow-x: auto;
+    max-width: 100%;
+    margin: 1rem 0;
+}
+
+.component-details code,
+.process-step code {
+    font-family: monospace;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.summary-box pre,
+.endpoint pre,
+.example pre,
+.summary-box.technical pre {
+    background-color: var(--surface-hover);
+    border-radius: 6px;
+    padding: 1rem;
+    overflow-x: auto;
+    max-width: 100%;
+    margin: 1rem 0;
+}
+
+.summary-box code,
+.endpoint code,
+.example code,
+.summary-box.technical code {
+    font-family: monospace;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Improved Search Results Formatting */
+.message.assistant pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.message.assistant p {
+    margin-bottom: 1rem;
+}
+
+.message.assistant ul {
+    padding-left: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.message.assistant ul li {
+    margin-bottom: 0.5rem;
+}
+
+.message.assistant strong {
+    font-weight: 600;
+}
+
+.search-summary p {
+    font-size: 1rem;
+    line-height: 1.6;
+    margin-bottom: 1.5rem;
+}
+
+/* Ensure place cards maintain consistent style */
+.place-card {
+    margin-bottom: 1rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.place-card h4 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    font-size: 1.1rem;
+    color: var(--accent);
+}
+
+.place-card .address,
+.place-card p.address {
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.place-card .rating,
+.place-card p.rating {
+    margin-bottom: 0.5rem;
+    color: #f5a623;
+    font-size: 0.9rem;
+}
+
+.places-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+@media (max-width: 768px) {
+    .places-grid {
+        grid-template-columns: 1fr;
     }
 }
