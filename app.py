@@ -788,6 +788,7 @@ Format your response as JSON with these fields:
                     temperature=0.7
                 )
                 
+                # Extract the assistant's response
                 analysis_text = analysis_response['choices'][0]['message']['content'].strip()
                 logger.info(f"[Search] Received analysis from OpenAI")
                 

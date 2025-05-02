@@ -40,7 +40,23 @@
 
     <div class="app-container">
         <div class="main-content">
-            <div class="chat-container">
+            <div class="list-view-container">
+                <div id="list-view">
+                    <!-- List view will be populated dynamically -->
+                </div>
+            </div>
+            
+            <div class="map-container">
+                <div id="map"></div>
+            </div>
+            
+            <!-- Chat toggle button -->
+            <button class="chat-toggle-btn" id="chat-toggle-btn" title="Toggle chat">
+                <i class="fas fa-comments"></i>
+            </button>
+
+            <!-- Chat container - initially hidden -->
+            <div class="chat-container hidden" id="chat-container">
                 <div class="chat-header">
                     <div class="logo">CityPulse</div>
                     <div class="status-indicator">
@@ -78,19 +94,6 @@
                     </div>
                 </div>
             </div>
-
-            <div class="map-container">
-                <div class="map-header">
-                    <div class="view-controls">
-                        <button class="view-toggle active" data-view="map">Map View</button>
-                        <button class="view-toggle" data-view="list">List View</button>
-                    </div>
-                </div>
-                <div id="map"></div>
-                <div id="list-view" class="hidden">
-                    <!-- List view will be populated dynamically -->
-                </div>
-            </div>
         </div>
     </div>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
@@ -99,6 +102,10 @@
         // Initialize theme before Google Maps loads
         document.addEventListener('DOMContentLoaded', () => {
             initTheme();
+            
+            // Setup chat toggle functionality
+            const chatToggleBtn = document.getElementById('chat-toggle-btn');
+            chatToggleBtn.addEventListener('click', toggleChat);
         });
 
         // Callback when Google Maps is loaded
