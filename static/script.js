@@ -316,87 +316,12 @@ async function sendMessage() {
         clearInterval(typingIndicator.interval);
         typingIndicator.element.remove();
         
-        // Add assistant response to chat
+        // Process the response based on type
         if (data.places && data.places.length > 0) {
             console.log("Search results received, formatting for display");
             
-            // Format place data into a nice HTML display
-            let placesHTML = `
-                <div class="search-summary">
-                    <p>${data.analysis && data.analysis.summary ? data.analysis.summary : 'Places matching your search:'}</p>
-                </div>
-            `;
-            
-            // Add highlights if available
-            if (data.analysis && data.analysis.highlights && data.analysis.highlights.length > 0) {
-                placesHTML += `<div class="highlights"><h4>Highlights</h4><ul>`;
-                
-                data.analysis.highlights.forEach(highlight => {
-                    placesHTML += `<li><strong>${highlight.place_name}:</strong> ${highlight.key_features.join(', ')}</li>`;
-                });
-                
-                placesHTML += `</ul></div>`;
-            }
-            
-            // Add comparisons if available
-            if (data.analysis && data.analysis.comparisons && data.analysis.comparisons.length > 0) {
-                placesHTML += `<div class="comparisons"><h4>Comparisons</h4><ul>`;
-                
-                data.analysis.comparisons.forEach(comparison => {
-                    placesHTML += `<li>${comparison}</li>`;
-                });
-                
-                placesHTML += `</ul></div>`;
-            }
-            
-            // Start the grid for place cards
-            placesHTML += `<div class="places-grid">`;
-            
-            // Add individual place cards
-            data.places.forEach(place => {
-                const rating = place.rating && typeof place.rating === 'number' ? 
-                               '★'.repeat(Math.round(place.rating)) + '☆'.repeat(5 - Math.round(place.rating)) :
-                               'Rating N/A';
-                placesHTML += `
-                    <div class="place-card">
-                        <h4>${place.name || 'Unknown'}</h4>
-                        <p class="address">${place.formatted_address || 'Address unavailable'}</p>
-                        <p class="rating">${rating}</p>
-                        ${place.website ? `<p><a href="${place.website}" target="_blank">Website</a></p>` : ''}
-                    </div>
-                `;
-            });
-            
-            // Close the grid
-            placesHTML += `</div>`;
-            
-            // Add additional info sections if available
-            if (data.social_proof || data.considerations) {
-                placesHTML += `<div class="additional-info">`;
-                
-                if (data.social_proof) {
-                    placesHTML += `
-                        <div class="social-proof">
-                            <h4>What others say</h4>
-                            <p>${data.social_proof}</p>
-                        </div>
-                    `;
-                }
-                
-                if (data.considerations) {
-                    placesHTML += `
-                        <div class="considerations">
-                            <h4>Things to consider</h4>
-                            <p>${data.considerations}</p>
-                        </div>
-                    `;
-                }
-                
-                placesHTML += `</div>`;
-            }
-            
-            // Add the formatted places display to chat
-            addMessageToChat('assistant', placesHTML);
+            // Add assistant response to chat (without auto-scrolling - handled in addMessageToChat)
+            addMessageToChat('assistant', data.response);
             
             // Clear previous markers
             if (markers.length > 0) {
@@ -534,12 +459,13 @@ async function sendMessage() {
             
             // Update history UI
             updateSearchHistory();
-        } else {
-            // Regular message (not search results)
+        } else if (data.response) {
+            // Regular chat message (not search results)
             addMessageToChat('assistant', data.response);
-            
-            // Only scroll for regular messages
-            scrollToBottom();
+        } else if (data.error) {
+            addMessageToChat('assistant', `Sorry, I encountered an error: ${data.error}`);
+        } else {
+            addMessageToChat('assistant', "Something went wrong. Please try again.");
         }
     } catch (error) {
         console.error('Error sending message:', error);
@@ -547,6 +473,49 @@ async function sendMessage() {
         typingIndicator.element.remove();
         addMessageToChat('assistant', 'Sorry, there was an error processing your request. Please try again.');
     }
+}
+
+/**
+ * Properly format message content with robust handling of Markdown and HTML
+ * @param {string} content - The message content to format
+ * @returns {string} - The formatted HTML content
+ */
+function formatMessageContent(content) {
+    if (!content) return '';
+    
+    // Check if content is already HTML
+    if (/<\/?[a-z][\s\S]*>/i.test(content)) {
+        return content; // Return as-is if it contains HTML tags
+    }
+    
+    // Step 1: Escape HTML to prevent injection
+    let formatted = content
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    
+    // Step 2: Process Markdown-style formatting in a specific order
+    
+    // Handle bold text - capture text between double asterisks non-greedily
+    formatted = formatted.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+    
+    // Handle section titles with special formatting (Amenities, Good to know, etc.)
+    formatted = formatted.replace(/\n([A-Za-z ]+):/g, '\n<span class="section-title">$1:</span>');
+    
+    // Handle links - very simple link detection
+    formatted = formatted.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+    
+    // Step 3: Handle paragraph breaks properly
+    let paragraphs = formatted.split('\n\n');
+    formatted = paragraphs.map(p => {
+        if (p.trim()) {
+            // Replace single newlines with <br>
+            return '<p>' + p.replace(/\n/g, '<br>') + '</p>';
+        }
+        return '';
+    }).join('');
+    
+    return formatted;
 }
 
 // Function to add a message to the chat UI
@@ -558,40 +527,23 @@ function addMessageToChat(role, content) {
     // Ensure content is a string
     const contentStr = typeof content === 'string' ? content : String(content || '');
     
-    // Convert any links in the content to clickable links
-    const linkedContent = contentStr.replace(
-        /(https?:\/\/[^\s]+)/g, 
-        '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-    );
-    
-    // Check if content contains special formatting for search results
-    if (contentStr.includes('<div class="places-grid">') || contentStr.includes('<div class="search-summary">')) {
-        // Only include the search summary, not the places grid
-        if (contentStr.includes('<div class="search-summary">')) {
-            const summaryMatch = contentStr.match(/<div class="search-summary">([\s\S]*?)<\/div>/);
-            if (summaryMatch && summaryMatch[1]) {
-                messageElement.innerHTML = `<div class="search-summary">${summaryMatch[1]}</div>`;
-            } else {
-                messageElement.innerHTML = linkedContent;
-            }
-        } else {
-            // If there's no search summary, just show the message text
-            messageElement.innerHTML = linkedContent;
-        }
-    } else if (role === 'assistant' && (contentStr.includes('★★★★') || contentStr.match(/(\d+\.?\s\*\*.*?\*\*)/))) {
-        // This looks like a search result but isn't formatted as HTML
-        // Format it properly with structured HTML, but only include the summary
-        
-        // Create a container for search results summary
-        let formattedHTML = '<div class="search-summary"><p>' + 
-            contentStr.split('\n\n')[0] + // First paragraph as summary
-            '</p></div>';
-        
-        messageElement.innerHTML = formattedHTML;
-    } else {
-        messageElement.innerHTML = linkedContent;
+    // Apply special class for search queries to ensure proper styling
+    if (role === 'user' && (
+        contentStr.toLowerCase().includes('find') || 
+        contentStr.toLowerCase().includes('where') ||
+        contentStr.toLowerCase().includes('show me') ||
+        contentStr.toLowerCase().match(/\w+ in \w+/)
+    )) {
+        messageElement.classList.add('search-query');
     }
     
+    // Format the message content with our robust formatter
+    const formattedContent = formatMessageContent(contentStr);
+    
+    // Set the formatted content to the message element
+    messageElement.innerHTML = formattedContent;
+    
+    // Add the message to the chat container
     chatMessages.appendChild(messageElement);
     
     // Only scroll to bottom for user messages
@@ -672,8 +624,8 @@ function displayTypingIndicator() {
     typingElement.appendChild(typingContainer);
     chatMessages.appendChild(typingElement);
     
-    // Scroll to show the typing indicator
-    scrollToBottom();
+    // Don't auto-scroll for typing indicator
+    // The typing indicator is from the assistant, so we don't want to scroll
     
     // Cycle through quirky messages with random selection but no repeats
     const interval = setInterval(() => {
@@ -755,6 +707,9 @@ function clearConversation() {
         </div>
     `;
     chatMessages.appendChild(welcomeMessage);
+    
+    // Scroll to bottom to show the welcome message (user-initiated action)
+    scrollToBottom();
 }
 
 // Add event listener for Enter key
@@ -766,6 +721,7 @@ document.getElementById('query').addEventListener('keypress', function(e) {
 
 // Handle example query clicks
 function useExample(button) {
+    // This is a user-initiated action (clicking an example), so we'll treat it like a user message
     const input = document.getElementById('query');
     input.value = button.textContent;
     sendMessage();
@@ -846,7 +802,7 @@ function toggleChat() {
             if (queryInput) queryInput.focus();
         }, 300);
         
-        // Scroll to the bottom of chat
-        scrollToBottom();
+        // Don't automatically scroll to the bottom when opening the chat
+        // This allows users to see the conversation history
     }
 }

@@ -305,13 +305,21 @@ body {
     -webkit-overflow-scrolling: touch;
 }
 
+/* Comprehensive chat message styling system */
+
+/* Base message styles */
 .message {
     margin-bottom: 1.5rem;
-    max-width: 90%;
+    max-width: 85%;
     word-wrap: break-word;
     overflow-wrap: break-word;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    position: relative;
+    z-index: 1;
 }
 
+/* System messages */
 .message.system {
     margin: 0 auto 1.5rem;
     text-align: center;
@@ -321,6 +329,86 @@ body {
     border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
+
+/* --- NEW CONSOLIDATED CHAT MESSAGE STYLES --- */
+
+/* --- User Message Styling --- */
+.message.user {
+    margin-left: auto; /* Aligns to the left */
+    margin-right: 0;
+    background-color: var(--surface-hover); /* Light blue background for light theme */
+    color: #111827; /* Dark text for high contrast on light blue */
+    border-radius: 18px 18px 4px 18px; /* Slightly rounded bubble, flat bottom-right */
+    padding: 0.75rem 1rem; /* Slightly adjusted padding */
+    border: 1px solid var(--border);
+}
+
+/* User Message Styling - Dark Theme */
+[data-theme="dark"] .message.user {
+    background-color: #2c3e50; /* Dark blue-grey background for dark theme */
+    color: #e0e0e0; /* Light grey text for contrast on dark blue-grey */
+    border-color: var(--border-dark);
+}
+
+
+/* --- Assistant Message Styling --- */
+.message.assistant {
+    margin-right: auto; /* Aligns to the right */
+    margin-left: 0;
+    background-color: var(--surface-hover); /* Default: Light grey for light theme */
+    color: var(--text-primary); /* Default: Dark text for light theme */
+    border-radius: 18px 18px 18px 4px; /* Slightly rounded bubble, flat bottom-left */
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border); /* Use theme border color */
+}
+
+/* Assistant Message Styling - Dark Theme */
+[data-theme="dark"] .message.assistant {
+    background-color: var(--surface-hover-dark); /* Darker grey for dark theme */
+    color: var(--text-primary-dark); /* Light text for dark theme */
+    border-color: #b3fcd0; /* Darker border */
+}
+
+
+/* --- Formatting Inside Messages (ensure these are present and consistent) --- */
+.message p {
+    margin: 0 0 0.5rem 0; /* Smaller margin between paragraphs */
+    line-height: 1.6;
+}
+
+.message p:last-child {
+    margin-bottom: 0;
+}
+
+.message strong,
+.message b {
+    font-weight: 600; /* Slightly less bold */
+    color: inherit; /* Inherit color from parent message for better consistency */
+}
+
+/* Style links inside messages */
+.message a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+}
+.message a:hover {
+    text-decoration: underline solid;
+}
+
+/* Section titles (e.g., Amenities:) styling */
+.message .section-title {
+    display: block;
+    font-weight: 600;
+    color: var(--accent); /* Use accent color for titles */
+    margin-top: 0.8rem;
+    margin-bottom: 0.4rem;
+    font-size: 0.9rem; /* Slightly smaller */
+}
+
+/* --- END OF NEW CONSOLIDATED CHAT MESSAGE STYLES --- */
 
 .chat-input-container {
     padding: 0.75rem;
@@ -381,6 +469,7 @@ input[type="text"]:focus {
     flex-direction: column;
     gap: 0.5rem;
     width: 100%;
+    margin-top: 0.5rem;
 }
 
 .query-pill {
@@ -1203,7 +1292,16 @@ input[type="text"]:focus {
     margin-bottom: 2rem;
     background-color: var(--surface-hover);
     padding: 1rem;
-    border-radius: 8px;
+    border-radius: 18px 18px 18px 4px;
+    margin-left: 0;
+    margin-right: auto;
+    border: 1px solid var(--border);
+}
+
+/* Dark theme support for typing indicator */
+[data-theme="dark"] .message.typing {
+    background-color: var(--surface-hover-dark);
+    border-color: var(--border-dark);
 }
 
 .typing-container {
@@ -1742,4 +1840,56 @@ input[type="text"]:focus {
     .places-grid {
         grid-template-columns: 1fr;
     }
+}
+
+/* This section should go after the existing message styling */
+/* 
+.message.assistant {
+    margin-left: auto;
+    margin-right: 0;
+    background-color: var(--surface-hover);
+    border-radius: 12px 12px 0 12px;
+    padding: 0.8rem 1rem;
+    color: var(--text-primary);
+    line-height: 1.4;
+}
+
+.message.user {
+    margin-right: auto;
+    margin-left: 0;
+    background-color: var(--accent);
+    color: white;
+    border-radius: 12px 12px 12px 0;
+    padding: 0.8rem 1rem;
+}
+*/
+
+/* Keep these formatting rules as they don't conflict with our new styles */
+/* Format the line breaks correctly */
+.message.assistant br {
+    display: block;
+    content: "";
+    margin-top: 0.5rem;
+}
+
+/* Style for system messages - kept as is since we're not changing system messages */
+.message.system {
+    margin: 0 auto 1.5rem;
+    text-align: center;
+    max-width: 90%;
+    background-color: var(--surface-hover);
+    padding: 1rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.message.system h2 {
+    font-size: 1.4rem;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+}
+
+.message.system p {
+    margin-bottom: 1.2rem;
+    font-size: 1rem;
 }

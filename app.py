@@ -752,6 +752,14 @@ Based on the user's query: "{user_query}", provide:
 1. A friendly, conversational summary of the best options - imagine you're telling a friend about these places
 2. Specific highlights of each place that make it special, particularly focusing on {requirements if requirements else 'what makes them great'}
 3. Casual comparisons between options to help the user decide
+4. Information about the various amenities available at each place (where applicable), such as:
+   - Outdoor seating/beer gardens
+   - Pet-friendly policies and accommodations
+   - Family-friendly features
+   - Accessibility options
+   - Special events or promotions
+   - Unique features that distinguish this place
+5. Practical information like best times to visit, what to expect for crowds or wait times
 
 The user is looking for: "{search_terms}"{' that are ' + requirements if requirements else ''}. 
 Only include places that actually match what they're looking for.
@@ -763,7 +771,15 @@ Format your response as JSON with these fields:
     {{"place_name": "Name of Place 1", "key_features": ["A specific standout feature described conversationally", "Another great thing about this place"]}},
     {{"place_name": "Name of Place 2", "key_features": ["What makes this place special", "Another noteworthy aspect"]}}
   ],
-  "comparisons": ["A casual comparison between places, like 'If you prefer a relaxed vibe, X is better than Y'", "Another helpful comparison"]
+  "comparisons": ["A casual comparison between places, like 'If you prefer a relaxed vibe, X is better than Y'", "Another helpful comparison"],
+  "amenities": [
+    {{"place_name": "Name of Place 1", "amenities": ["Notable amenity 1", "Notable amenity 2"]}},
+    {{"place_name": "Name of Place 2", "amenities": ["Notable amenity 1", "Notable amenity 2"]}}
+  ],
+  "practical_info": [
+    {{"place_name": "Name of Place 1", "info": ["Best time to visit", "What to expect"]}},
+    {{"place_name": "Name of Place 2", "info": ["Best time to visit", "What to expect"]}}
+  ]
 }}
 """
             
@@ -812,7 +828,9 @@ Format your response as JSON with these fields:
                     analysis_data = {
                         "summary": analysis_text[:500] + "...",
                         "highlights": [],
-                        "comparisons": []
+                        "comparisons": [],
+                        "amenities": [],
+                        "practical_info": []
                     }
                     
                 # Save the search context to the cache for future reference
@@ -945,6 +963,8 @@ def _create_conversational_response(analysis_data, places, search_terms, require
     summary = analysis_data.get('summary', '')
     highlights = analysis_data.get('highlights', [])
     comparisons = analysis_data.get('comparisons', [])
+    amenities = analysis_data.get('amenities', [])
+    practical_info = analysis_data.get('practical_info', [])
     
     # Create a friendly, casual intro
     if location and location != 'default':
@@ -978,7 +998,16 @@ def _create_conversational_response(analysis_data, places, search_terms, require
             place_highlight = next((h for h in highlights if h.get('place_name') == name), None)
             features = place_highlight.get('key_features', []) if place_highlight else []
             
-            # Build a casual, conversational description
+            # Find amenities for this place
+            place_amenities = next((a for a in amenities if a.get('place_name') == name), None)
+            amenity_list = place_amenities.get('amenities', []) if place_amenities else []
+            
+            # Find practical info for this place
+            place_practical = next((p for p in practical_info if p.get('place_name') == name), None)
+            practical_list = place_practical.get('info', []) if place_practical else []
+            
+            # Ensure name is properly formatted with bold markup
+            # Use single backticks for names to prevent nesting issues
             response += f"**{name}** - "
             
             # Add a casual description based on features
@@ -1011,6 +1040,16 @@ def _create_conversational_response(analysis_data, places, search_terms, require
             else:
                 response += f"It's at {address}. "
             
+            # Add amenities if available - using proper formatting for section titles
+            if amenity_list:
+                response += "\nAmenities: "
+                response += f"{', '.join(amenity_list[:3])}. "
+            
+            # Add practical info if available
+            if practical_list:
+                response += "\nGood to know: "
+                response += f"{', '.join(practical_list[:2])}. "
+                
             response += "\n\n"
     
     # Add one comparison if available, in a conversational way
