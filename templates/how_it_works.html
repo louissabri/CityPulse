@@ -46,240 +46,302 @@
         <section class="docs-section">
             <h2>Summary</h2>
             <div class="summary-box">
-                <p>CityPulse is an AI-powered location discovery app that helps users find places of interest in Sydney. It combines natural language processing (via OpenAI) with location data (from Google Maps API) to understand user queries, conduct intelligent searches, and present results in a conversational, easy-to-understand format.</p>
-                <p>The app maintains conversation context across sessions, allowing for follow-up questions and a more natural interaction experience. Behind the scenes, CityPulse uses advanced AI to interpret search intent, extract requirements, resolve locations, and analyze venue information to provide personalized recommendations.</p>
+                <p>CityPulse is an intelligent location discovery application designed to help users explore Sydney through a natural, conversational interface. It understands everyday language queries about places using AI (OpenAI gpt-4o-mini) and combines this understanding with real-time data from the Google Maps Platform.</p>
+                <p>The app distinguishes between general chat and specific location searches. It maintains conversation context using unique session IDs, allowing for natural follow-up questions. When a search is identified, CityPulse extracts key details, fetches relevant places from Google Maps, enhances the results with AI-generated descriptions and analysis, and presents them clearly in both the chat window and on an interactive map with a synced list view.</p>
             </div>
-            
+
             <h3>Technical Architecture</h3>
             <div class="summary-box technical">
-                <p>At its core, CityPulse functions through several interconnected components:</p>
+                <p>CityPulse integrates several components to deliver its functionality:</p>
                 <ul>
-                    <li>The <strong>Flask application</strong> (app.py) serves as the central coordinator, handling HTTP requests, routing to appropriate handlers, and orchestrating the entire system flow.</li>
-                    <li>The <strong>ConversationManager</strong> maintains user session state in a SQLite database, allowing the system to track conversation history and provide context-aware responses.</li>
-                    <li>When a message arrives, the app first uses <strong>search intent detection</strong> (pattern matching + OpenAI classification) to determine whether to handle it as a general chat or location search.</li>
-                    <li>For search queries, an <strong>extraction process</strong> (powered by OpenAI) breaks down natural language into structured parameters (amenity, requirements, location).</li>
-                    <li>The <strong>Google Maps integration</strong> resolves locations and fetches place data through coordinated API calls.</li>
-                    <li>Finally, <strong>result analysis</strong> (via OpenAI) transforms raw place data into personalized, contextual recommendations that are returned to the frontend.</li>
+                    <li><strong>Flask Application (`app.py`):</strong> The Python web server acting as the central orchestrator. It handles incoming HTTP requests, routes them to the appropriate logic (chat or search), manages API calls, and coordinates the overall process flow.</li>
+                    <li><strong>Conversation Manager (`conversation_manager.py`):</strong> Manages user sessions and conversation history using a persistent <strong>SQLite database (`conversations.db`)</strong>. This enables context-aware replies, handles follow-up questions, and performs history trimming to manage token limits.</li>
+                    <li><strong>Intent Detection (`app.py:/chat`):</strong> A multi-stage process combining keyword/pattern matching and AI classification (OpenAI gpt-4o-mini) to determine if a user's message is a general chat query, a new search for places, or a request for more information about a specific place.</li>
+                    <li><strong>Parameter Extraction (`app.py:search`):</strong> If a search is detected, uses AI (OpenAI gpt-4o-mini) to parse the natural language query into structured parameters: `amenity` (type of place), `requirements` (specific features like "dog-friendly"), and `location`.</li>
+                    <li><strong>Context Handling (`app.py:search`):</strong> Utilizes an in-memory cache (`search_context_cache`) and the `ConversationManager`'s history retrieval to understand follow-up questions within the context of the current session.</li>
+                    <li><strong>Google Maps Integration (`app.py`):</strong> Leverages the `googlemaps` Python library to interact with Google Maps Platform APIs:
+                        <ul>
+                            <li><strong>Geocoding API:</strong> Resolves textual locations (e.g., "Newtown") into geographic coordinates.</li>
+                            <li><strong>Places API (Nearby Search):</strong> Finds relevant places based on keywords, location coordinates, and radius.</li>
+                            <li><strong>Places API (Place Details):</strong> Fetches rich information for specific places (address, rating, reviews, hours, photos).</li>
+                        </ul>
+                    </li>
+                    <li><strong>AI Enhancement (`app.py:search`):</strong> Employs OpenAI (gpt-4o-mini) for two key tasks:
+                        <ul>
+                            <li><strong>Description Generation:</strong> Creates a concise, friendly `ai_description` for each individual place returned by Google.</li>
+                            <li><strong>Result Analysis:</strong> Analyzes the entire list of detailed places in the context of the user's query to generate a structured JSON containing summaries, highlights, comparisons, amenity lists, and practical tips.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Response Formatting (`app.py:_create_conversational_response`):</strong> Translates the structured AI analysis into a user-friendly, conversational text summary suitable for the chat interface.</li>
+                    <li><strong>Frontend (`static/script.js`, `index.html`, `style.css`):</strong> The user interface built with HTML, CSS, and JavaScript. It handles user input, displays the chat conversation, integrates with the Google Maps JavaScript API to render the map and markers, populates the interactive list view (including expandable AI descriptions), and manages theme switching.</li>
                 </ul>
-                <p>This modular architecture allows for separation of concerns while maintaining a seamless user experience through the carefully coordinated flow of data between components.</p>
+                <p>This architecture allows CityPulse to understand complex queries, retrieve relevant data, enrich it with AI insights, and present it through an intuitive interface.</p>
             </div>
         </section>
 
         <section class="docs-section">
             <h2>System Architecture</h2>
-            <p>CityPulse is built on a Flask backend with a JavaScript frontend. The application leverages several APIs and services:</p>
-            
+            <p>CityPulse combines a web frontend, a Python backend, and several external services:</p>
+
             <div class="architecture-diagram">
                 <div class="arch-component">
                     <h3>Frontend</h3>
                     <ul>
                         <li>HTML/CSS/JavaScript</li>
-                        <li>Google Maps integration</li>
-                        <li>Responsive design</li>
+                        <li>Google Maps JavaScript API (Map, Markers, InfoWindows)</li>
+                        <li>Interactive Map & Synced List View</li>
+                        <li>Expandable List Items (Show AI Description)</li>
+                        <li>Conversational Chat Interface</li>
+                        <li>Theme Switching (Light/Dark)</li>
+                        <li>Responsive Design</li>
                     </ul>
                 </div>
                 <div class="arch-component">
                     <h3>Backend (Flask)</h3>
                     <ul>
-                        <li>Search processing</li>
-                        <li>API integration</li>
-                        <li>Session management</li>
+                        <li>HTTP Request Handling (`/chat`, `/generate_session_id`)</li>
+                        <li>Intent Classification (Pattern + AI)</li>
+                        <li>Parameter Extraction (AI)</li>
+                        <li>Context Management (Cache & SQLite via `ConversationManager`)</li>
+                        <li>Google Maps API Interaction (Geocoding, Places)</li>
+                        <li>AI Analysis & Description Generation (OpenAI)</li>
+                        <li>Response Formatting</li>
+                        <li>SQLite DB via `ConversationManager`</li>
                     </ul>
                 </div>
                 <div class="arch-component">
                     <h3>External Services</h3>
                     <ul>
-                        <li>OpenAI API</li>
-                        <li>Google Maps API</li>
-                        <li>Google Places API</li>
+                        <li>OpenAI API (gpt-4o-mini)</li>
+                        <li>Google Maps Geocoding API</li>
+                        <li>Google Maps Places API (Nearby Search & Place Details)</li>
                     </ul>
                 </div>
             </div>
         </section>
 
         <section class="docs-section">
-            <h2>The Search Process</h2>
-            <p>When you type a query in CityPulse, a sophisticated multi-step process begins:</p>
+            <h2>The Search Process: A Detailed Flow</h2>
+            <p>When you ask CityPulse to find a place, here’s what happens behind the scenes:</p>
 
             <div class="process-flow">
                 <div class="process-step">
-                    <h3>1. Query Understanding</h3>
-                    <p>CityPulse first determines whether your message is a casual conversation or a search query. For search queries, it uses OpenAI to extract:</p>
-                    <ul>
-                        <li>The type of place you're looking for (e.g., "restaurants", "cafes")</li>
-                        <li>Special requirements (e.g., "dog-friendly", "outdoor seating")</li>
-                        <li>Location specifications (e.g., "in Bondi", "near Sydney CBD")</li>
-                    </ul>
-                    <p>This natural language understanding is what allows you to search in everyday language rather than with strict keywords.</p>
-                    <pre><code>// Example of query analysis
+                    <h3>1. Message Received & Intent Check</h3>
+                    <p>Your message arrives at the Flask backend (`/chat` endpoint). The system first uses keywords, patterns (like "what about...", "any in..."), and an AI classification call (to OpenAI gpt-4o-mini) to determine if you're asking for places, just chatting, or asking for more details on a specific place.</p>
+                </div>
+
+                <div class="process-step">
+                    <h3>2. Parameter Extraction & Context Handling</h3>
+                    <p>If it's identified as a *new* search query, another AI call (OpenAI gpt-4o-mini) extracts the key information: what kind of place (`amenity`), any special needs (`requirements`), and where (`location`).</p>
+                    {% raw %}
+                    <pre><code>// Example: Query "Dog friendly beer gardens in Newtown" -> Extraction
 {
-  "original": "Dog friendly beer gardens in Newtown",
-  "amenity": "beer gardens",
+  "amenity": "beer garden",
   "requirements": "dog friendly",
-  "location": "Newtown"
+  "location": "Newtown",
+  "follow_up": "no"
 }</code></pre>
+                    {% endraw %}
+                    <p>If it's a follow-up query (e.g., "Any in Marrickville?"), the system uses your `session_id` to look up the previous search terms (`beer garden`, `dog friendly`) from its memory (cache or conversation history) and combines them with the new location ("Marrickville").</p>
                 </div>
 
                 <div class="process-step">
-                    <h3>2. Location Resolution</h3>
-                    <p>Next, CityPulse precisely locates your search area using the Google Maps Geocoding API. It has special handling for Sydney neighborhoods and landmarks, ensuring accurate location targeting even with casual descriptions.</p>
+                    <h3>3. Location Resolution (Geocoding)</h3>
+                    <p>CityPulse uses the Google Maps Geocoding API to convert the location name (e.g., "Newtown") into precise latitude and longitude coordinates. It intelligently adjusts the search radius based on how specific the location is (e.g., a smaller radius for a dense suburb like Newtown, larger for "Sydney"). If no location is given or found, it defaults to Sydney CBD.</p>
                 </div>
 
                 <div class="process-step">
-                    <h3>3. Search Execution</h3>
-                    <p>Using the extracted parameters, CityPulse performs optimized searches through the Google Places API. It balances search precision with coverage to find relevant results even for niche queries.</p>
-                    <p>The search algorithm incorporates:</p>
-                    <ul>
-                        <li>Multi-term searches for complex requirements</li>
-                        <li>Radius optimization based on location density</li>
-                        <li>Result deduplication across multiple searches</li>
-                    </ul>
+                    <h3>4. Finding Places (Google Places Nearby Search)</h3>
+                    <p>Using the coordinates, search radius, and refined search terms (e.g., "pub beer garden dog friendly"), the app queries the Google Places API (Nearby Search) to get a list of potentially matching places.</p>
                 </div>
 
                 <div class="process-step">
-                    <h3>4. Result Analysis</h3>
-                    <p>Raw search results are processed through OpenAI, which analyzes venue details, opening hours, reviews, and ratings to determine which places best match your requirements.</p>
-                    <p>The AI considers:</p>
-                    <ul>
-                        <li>Explicit mentions of requirements in reviews</li>
-                        <li>Overall ratings and sentiment</li>
-                        <li>Relevance to the original query</li>
-                    </ul>
+                    <h3>5. Fetching Details (Google Places Details)</h3>
+                    <p>For the most relevant places found (up to a limit, e.g., 7), CityPulse requests detailed information using the Google Places API (Place Details). This fetches addresses, ratings, opening hours, photos, user reviews, websites, etc.</p>
                 </div>
 
                 <div class="process-step">
-                    <h3>5. Response Generation</h3>
-                    <p>Finally, CityPulse composes a conversational response that highlights the most relevant aspects of each recommendation, tailored to your specific query.</p>
+                    <h3>6. AI Description Generation (Per Place)</h3>
+                    <p>For *each* place with details, the system makes a quick call to OpenAI (gpt-4o-mini) asking for a very concise, friendly, one-sentence description (like "A popular Newtown pub known for its great atmosphere and sunny beer garden.") This description (`ai_description`) is stored with the place data.</p>
+                </div>
+
+                <div class="process-step">
+                    <h3>7. AI Result Analysis (List Analysis)</h3>
+                    <p>The list of detailed places (now including their `ai_description`) is sent *back* to OpenAI (gpt-4o-mini) along with your original query. This AI call analyzes the *entire list* to identify the best matches, highlight key features relevant to your request, make helpful comparisons, list notable amenities, and provide practical tips. The result is structured JSON data.</p>
+                </div>
+
+                <div class="process-step">
+                    <h3>8. Formatting the Response</h3>
+                    <p>The backend takes the structured AI analysis and formats it into a friendly, conversational text message (`response`) suitable for the chat window. It packages this `response` string along with the detailed `places` array (containing `ai_description`s) and the structured `analysis` object into a single JSON payload.</p>
+                </div>
+
+                <div class="process-step">
+                    <h3>9. Frontend Display</h3>
+                    <p>The frontend JavaScript (`script.js`) receives the JSON payload. It displays the `response` text in the chat. It clears any old markers and list items, then adds new markers to the interactive map for each place in the `places` array. It also populates the list view on the left. Clicking a list item expands it to show the `ai_description` and focuses the map on the corresponding marker.</p>
                 </div>
             </div>
         </section>
 
         <section class="docs-section">
             <h2>Backend Deep Dive</h2>
-            <p>The backend is the most sophisticated part of CityPulse, handling complex tasks like natural language processing, API integration, and data analysis.</p>
+            <p>The core logic resides in the Flask backend, integrating various services.</p>
 
             <h3>Key Components</h3>
 
             <div class="component-details">
-                <h4>Search Intent Detection</h4>
-                <p>Before processing any query, CityPulse determines if a message is asking about places or locations. This is done through a combination of pattern matching and AI classification.</p>
-                <pre><code>is_search_query = any(keyword in user_message.lower() for keyword in 
-                 ['find', 'where', 'location', 'place', 'nearby', 'restaurant', 'cafe', 'bar'])
+                <h4>Search Intent Detection (`/chat` endpoint)</h4>
+                <p>Determines if a message is a search, chat, or follow-up using keywords (e.g., 'find', 'where'), patterns (e.g., 'what about in X'), and AI classification.</p>
+                <pre><code class="language-python"># Conceptual Prompt for AI Intent Classification (sent to gpt-4o-mini)
+f"""Determine if this is a location/place search query: "{user_message}"
 
-# For more complex cases, use OpenAI to analyze search intent
-if not is_search_query and len(user_message.split()) > 3:
-    intent_query = f"""Determine if this is a location/place search query: "{user_message}"
-    
-    Examples of search queries:
-    - "Dog friendly beer gardens in Newtown"
-    - "Where can I find good coffee shops with wifi?"
-    
-    Is this a query looking for places, venues, or locations?"""</code></pre>
+Examples of search queries:
+- "Dog friendly beer gardens in Newtown"
+- "Where can I find good coffee shops with wifi?"
+
+Is this a query looking for places, venues, or locations? Respond with ONLY 'yes' or 'no'."""
+
+# Follow-up classification prompt also used for "more info" vs "new search"</code></pre>
             </div>
 
             <div class="component-details">
-                <h4>Query Parameter Extraction</h4>
-                <p>For search queries, CityPulse uses OpenAI to break down natural language into structured search parameters.</p>
-                <pre><code>extraction_prompt = f"""
-Extract search parameters from this query: "{query}"
+                <h4>Query Parameter Extraction (`search` function)</h4>
+                <p>Uses OpenAI to break down search queries into structured `amenity`, `requirements`, and `location`.</p>
+                <pre><code class="language-python"># Actual Prompt Sent to OpenAI (gpt-4o-mini)
+extraction_prompt = f"""Extract search information from this query: "{user_query}"
 
-Please return ONLY a JSON object with these fields:
-- amenity: What they're looking for (e.g., restaurants, cafes, parks)
-- requirements: Special requirements or features (e.g., dog-friendly, outdoor seating)
-- location: Where they want to search (e.g., Sydney CBD, Bondi)
+This is part of a conversation about places in Sydney. The user may be asking about specific types of venues or establishments.
 
-If any field is not specified, use null for that field."""</code></pre>
+Pay special attention to the EXACT type of place being requested...
+
+Format your response EXACTLY like this:
+amenity: [the EXACT type of place being sought...]
+requirements: [specific requirements or criteria mentioned...]
+location: [the specific suburb, area, or 'Sydney' if general...]
+follow_up: [yes/no - indicate if this is a follow-up question...]
+"""</code></pre>
             </div>
 
             <div class="component-details">
-                <h4>Conversation Management</h4>
-                <p>CityPulse maintains conversation history in a SQLite database, allowing for context-aware interactions. The ConversationManager class handles session creation, message storage, and context maintenance.</p>
-                <pre><code>def add_message(self, session_id, role, content):
+                <h4>Conversation Management (`ConversationManager` class)</h4>
+                <p>Uses SQLite (`conversations.db`) to store message history per `session_id`. Provides functions to add messages, retrieve history, and trim conversations to prevent exceeding API token limits while preserving key context (like recent search results).</p>
+                <pre><code class="language-python"># Simplified Example Snippet from ConversationManager
+def add_message(self, session_id, role, content):
     """Add a message to the conversation history."""
     conversation = self.get_conversation(session_id)
-    
-    # If this is a new conversation, add system message
-    if not conversation:
-        conversation = [{
-            "role": "system",
-            "content": "You are CityPulse, a helpful assistant for finding local information..."
-        }]
-    
-    # Add the new message
-    conversation.append({
-        "role": role,
-        "content": content
-    })
-    
-    # Save the updated conversation
-    self.save_conversation(session_id, conversation)
-    return conversation</code></pre>
+    if not conversation: # Add system prompt if new
+        conversation = [{"role": "system", "content": "You are CityPulse..."}]
+    conversation.append({"role": role, "content": content})
+    self.save_conversation(session_id, conversation) # Writes to SQLite
+    return conversation
+</code></pre>
             </div>
 
             <div class="component-details">
-                <h4>Google Places Integration</h4>
-                <p>The app leverages Google's Places API for location data, with specialized handling for various place types and search requirements.</p>
-                <pre><code>async def _fetch_google_nearby(location, radius, keyword) -> List[Dict]:
-    """Fetch nearby places from Google Maps API."""
-    try:
-        result = gmaps.places_nearby(
-            location=location,
-            radius=radius,
-            keyword=keyword,
-            language="en",
-        )
-        
-        places = result.get('results', [])
-        return places
-    except Exception as e:
-        logger.error(f"Error fetching Google nearby places: {str(e)}")
-        return []</code></pre>
+                <h4>Google Places Integration (`search`, `_fetch_google_nearby`, `_fetch_place_details`)</h4>
+                <p>Uses the `googlemaps` library to call Google Maps Platform APIs for geocoding locations, finding nearby places based on keywords/location, and fetching detailed information for specific place IDs.</p>
+                <pre><code class="language-python"># Conceptual API Calls (using googlemaps library)
+# Location -> Coordinates
+geocode_result = gmaps.geocode(f"{location_query} sydney australia")
+location_coords = geocode_result[0]['geometry']['location']
+
+# Find Places Nearby
+places_result = gmaps.places_nearby(location=location_coords, radius=search_radius, keyword=search_terms)
+
+# Get Details for one Place
+details = gmaps.place(place_id=place_id, fields=[...]) # fields specify required data
+</code></pre>
             </div>
 
             <div class="component-details">
-                <h4>AI-Powered Result Analysis</h4>
-                <p>After gathering raw data, CityPulse uses OpenAI to analyze results and extract the most relevant information for the user's specific needs.</p>
-                <pre><code>analysis_prompt = f"""
-Analyze these {len(places)} places based on a search for "{search_terms}" with requirements "{requirements}" in "{location}".
+                <h4>AI Description Generation (`search` function)</h4>
+                <p>For each place detail fetched, a separate call to OpenAI generates a concise, friendly description.</p>
+                <pre><code class="language-python"># Actual Prompt Sent to OpenAI (gpt-4o-mini) for EACH place
+description_prompt = f"""
+Generate a very concise, friendly, one-sentence description (max 20 words)
+for the amenity '{place_name}' located at '{place_address}'.
+It is known for being types: {place_types_str}.
+Focus on its main purpose or vibe, and link it to the user's requirement '{requirements}'.
+"""</code></pre>
+            </div>
 
-For each place, extract key details that match the search requirements, special features, unique selling points, and why users might like it.
 
-Provide:
-1. A brief summary of the overall search results
-2. For each place, extract the most relevant features and highlights that match the requirements
-3. Any notable comparisons between the top options</code></pre>
+            <div class="component-details">
+                <h4>AI-Powered Result Analysis (`search` function)</h4>
+                <p>After gathering detailed place data (including AI descriptions), sends the list to OpenAI for contextual analysis based on the user's original query.</p>
+                {% raw %}
+                <pre><code class="language-python"># Actual Analysis Prompt Sent to OpenAI (gpt-4o-mini)
+analysis_prompt = f"""Analyze these places in Sydney based on the user's query: "{user_query}"
+
+Places:
+1. {place1_name}
+   Address: {place1_address}
+   Rating: {place1_rating}/5
+   Types: {place1_types}
+   Recent reviews: ...
+   (AI Description implicitly included via context)
+2. {place2_name}
+   ...
+
+Based on the user's query: "{user_query}", provide:
+1. A friendly, conversational summary...
+2. Specific highlights... focusing on {requirements if requirements else 'what makes them great'}
+3. Casual comparisons...
+4. Information about the various amenities...
+5. Practical information...
+
+The user is looking for: "{search_terms}"{' that are ' + requirements if requirements else ''}.
+Only include places that actually match what they're looking for.
+
+Format your response as JSON with these fields:
+{{
+  "summary": "...",
+  "highlights": [ ... ],
+  "comparisons": [ ... ],
+  "amenities": [ ... ],
+  "practical_info": [ ... ]
+}}
+"""</code></pre>
+                 {% endraw %}
             </div>
         </section>
 
         <section class="docs-section">
             <h2>Frontend Features</h2>
-            <p>While the backend does the heavy lifting, the frontend provides an intuitive user experience:</p>
+            <p>The user interface provides an intuitive way to interact with CityPulse:</p>
 
             <div class="feature-grid">
-                <div class="feature">
+                 <div class="feature">
+                    <h3>Conversational Chat</h3>
+                    <p>Allows users to interact using natural language, remembers context within a session, and displays AI responses clearly.</p>
+                </div>
+                 <div class="feature">
                     <h3>Interactive Map</h3>
-                    <p>Results are displayed on a Google Maps interface, allowing users to visualize locations spatially.</p>
+                    <p>Visualizes search results using Google Maps, with clickable markers showing place details in InfoWindows.</p>
                 </div>
                 <div class="feature">
-                    <h3>Chat Interface</h3>
-                    <p>A conversational UI that accepts natural language queries and displays results in a chat-like format.</p>
+                    <h3>Synced List View</h3>
+                    <p>Displays search results as a list. Items are expandable to show AI-generated descriptions. Clicking an item highlights it and focuses the map.</p>
                 </div>
                 <div class="feature">
+                    <h3>Chat Toggle</h3>
+                    <p>A floating button allows users to easily show or hide the chat interface.</p>
+                </div>
+                 <div class="feature">
                     <h3>Dark/Light Mode</h3>
-                    <p>Theme switching functionality that persists user preferences.</p>
+                    <p>Theme switching that affects the UI and the map style, with preference saved locally.</p>
                 </div>
                 <div class="feature">
                     <h3>Responsive Design</h3>
-                    <p>Adaptable layout that works across different device sizes.</p>
+                    <p>Adapts layout for optimal viewing on different screen sizes, including mobile devices.</p>
                 </div>
             </div>
         </section>
 
         <section class="docs-section">
-            <h2></h2>
+            <h2>Project Context</h2> <!-- Renamed section header -->
             <p>CityPulse was developed as a university project as part of the Computational Design degree at UNSW (University of New South Wales).</p>
             <div class="university-info">
-                <p>This project demonstrates the integration of AI technologies with spatial data to create intuitive user experiences that bridge natural language understanding with location-based services.</p>
+                <p>This project demonstrates the integration of AI technologies (natural language processing, analysis) with spatial data platforms (Google Maps) to create intuitive, context-aware user experiences for location discovery.</p>
                 <p>Feel free to explore the codebase on GitHub:</p>
                 <div class="github-link">
                     <a href="https://github.com/louissabri/citypulse" target="_blank" rel="noopener noreferrer">
@@ -292,7 +354,7 @@ Provide:
 
     <footer class="app-footer">
         <div class="footer-content">
-            <p>&copy; 2024 Louis Sabri. All rights reserved.</p>
+            <p>© 2024 Louis Sabri. All rights reserved.</p>
             <div class="footer-links">
                 <a href="https://github.com/louissabri" target="_blank" rel="noopener noreferrer" title="GitHub">
                     <i class="fab fa-github"></i>
@@ -306,11 +368,30 @@ Provide:
             </div>
         </div>
     </footer>
+    <!-- Keep existing script link -->
     <script src="{{ url_for('static', filename='theme.js') }}"></script>
     <script>
+        // Ensure theme is initialized on this page too
         document.addEventListener('DOMContentLoaded', () => {
-            initTheme();
+            // Check if initTheme exists before calling
+            if (typeof initTheme === 'function') {
+                initTheme();
+            } else {
+                console.warn('initTheme function not found in theme.js');
+                // Basic fallback if theme.js didn't load properly
+                const savedTheme = localStorage.getItem('theme') || 'light';
+                document.documentElement.setAttribute('data-theme', savedTheme);
+                 const themeToggle = document.getElementById('theme-toggle');
+                if (themeToggle) {
+                    themeToggle.checked = savedTheme === 'dark';
+                    themeToggle.addEventListener('change', (event) => {
+                         const newTheme = event.target.checked ? 'dark' : 'light';
+                         document.documentElement.setAttribute('data-theme', newTheme);
+                         localStorage.setItem('theme', newTheme);
+                    });
+                }
+            }
         });
     </script>
 </body>
-</html> 
+</html>

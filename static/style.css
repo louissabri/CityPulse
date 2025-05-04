@@ -1678,10 +1678,16 @@ input[type="text"]:focus {
 .github-link {
     background-color: var(--surface);
     border-radius: 8px;
-    padding: 1.5rem;
+    padding: 1.2rem;
     margin: 1.5rem 0;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
     text-align: center;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.github-link:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .github-link a {
@@ -1746,6 +1752,8 @@ input[type="text"]:focus {
 
 .university-info p {
     margin-bottom: 1rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
 }
 
 .component-details pre,
@@ -1916,4 +1924,189 @@ input[type="text"]:focus {
 .message.system p {
     margin-bottom: 1.2rem;
     font-size: 1rem;
+}
+
+/* How It Works Page Styles */
+.how-it-works {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+    font-size: 1rem;
+    line-height: 1.6;
+}
+
+.how-header {
+    margin-bottom: 3rem;
+    text-align: center;
+}
+
+.how-header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+}
+
+.how-header .intro {
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    max-width: 800px;
+    margin: 0 auto;
+    line-height: 1.8;
+}
+
+.section-highlight {
+    margin-bottom: 4rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.section-highlight h2 {
+    font-size: 1.8rem;
+    margin-bottom: 2rem;
+    color: var(--text-primary);
+    position: relative;
+    padding-bottom: 0.5rem;
+}
+
+.section-highlight h2:after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 60px;
+    height: 3px;
+    background-color: var(--accent);
+}
+
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+}
+
+.feature {
+    background-color: var(--surface);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.feature:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+}
+
+.feature h3 {
+    color: var(--accent);
+    margin-bottom: 1rem;
+    font-size: 1.3rem;
+}
+
+.feature p {
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+.feature ul, .feature ol {
+    padding-left: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.feature li {
+    margin-bottom: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+.action-section {
+    text-align: center;
+    margin-top: 4rem;
+    padding: 2rem;
+    background-color: var(--surface);
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.action-section h2 {
+    margin-bottom: 1.5rem;
+    color: var(--text-primary);
+    font-size: 1.8rem;
+}
+
+.example-queries {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1rem;
+    margin: 2rem 0;
+}
+
+.example-query {
+    background-color: var(--background);
+    color: var(--text-primary);
+    padding: 0.8rem 1.2rem;
+    border-radius: 100px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+    border: 1px solid var(--border);
+}
+
+.example-query:hover {
+    background-color: var(--accent);
+    color: white;
+    transform: translateY(-2px);
+}
+
+.cta-button {
+    margin-top: 2rem;
+}
+
+.cta-button .button {
+    display: inline-block;
+    background-color: var(--accent);
+    color: white;
+    padding: 0.8rem 2rem;
+    border-radius: 100px;
+    font-size: 1rem;
+    text-decoration: none;
+    font-weight: bold;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.cta-button .button:hover {
+    background-color: var(--accent-hover);
+    transform: translateY(-2px);
+}
+
+/* Media queries for responsive design */
+@media (max-width: 768px) {
+    .how-it-works {
+        padding: 1rem;
+    }
+    
+    .feature-grid {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+    
+    .how-header h1 {
+        font-size: 2rem;
+    }
+    
+    .section-highlight h2 {
+        font-size: 1.5rem;
+    }
+    
+    .example-queries {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .example-query {
+        width: 100%;
+        max-width: 300px;
+    }
 }

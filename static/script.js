@@ -813,6 +813,27 @@ function useExample(button) {
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', async () => {
+    // Initialize map
+    initMap();
+    
+    // Check for pending query from How It Works page
+    const pendingQuery = localStorage.getItem('pendingQuery');
+    if (pendingQuery) {
+        // Clear it immediately to prevent reuse
+        localStorage.removeItem('pendingQuery');
+        
+        // Wait a moment for everything to initialize
+        setTimeout(() => {
+            const chatInput = document.getElementById('chat-input');
+            if (chatInput) {
+                chatInput.value = pendingQuery;
+                // Trigger send if auto-send is desired
+                // Alternatively, just let the user review the query before sending
+                // document.querySelector('.send-button').click();
+            }
+        }, 1000);
+    }
+    
     // Initialize session
     await initializeSession();
     

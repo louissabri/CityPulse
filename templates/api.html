@@ -42,41 +42,45 @@
         <div class="docs-header">
             <h1>CityPulse API Documentation</h1>
             <p class="docs-intro">
-                The CityPulse API provides access to intelligent local recommendations powered by Google Maps with AI-enhanced analysis. The system uses advanced natural language processing to understand user queries and deliver conversational, helpful responses.
+                The CityPulse API provides intelligent local recommendations and conversational interactions for Sydney. It uses a single primary endpoint (`/chat`) that intelligently handles both general conversation and location-based searches, leveraging session context, Google Maps data, and AI analysis (OpenAI gpt-4o-mini).
             </p>
         </div>
 
         <section class="docs-section">
             <h2>Overview</h2>
-            <p>The API uses a combination of AI and Google Places data to provide comprehensive local recommendations:</p>
+            <p>The API processes user messages through the `/chat` endpoint using the following core steps:</p>
             <div class="process-flow">
                 <div class="process-step">
-                    <h3>1. Query Processing</h3>
-                    <p>Uses advanced NLP techniques and OpenAI to detect search intent, understand user queries and extract search criteria, requirements, and location information.</p>
+                    <h3>1. Intent Detection</h3>
+                    <p>Analyzes the incoming message using patterns and AI (OpenAI gpt-4o-mini) to classify its intent: is it a general chat message, a new search for places, or a follow-up question requesting more information about a previously mentioned place?</p>
                 </div>
                 <div class="process-step">
-                    <h3>2. Location Resolution</h3>
-                    <p>Resolves locations using Google Maps API, with built-in support for Sydney neighborhoods and landmarks.</p>
+                    <h3>2. Parameter Extraction & Context</h3>
+                    <p>If a new search is detected, uses AI (OpenAI gpt-4o-mini) to extract structured parameters like `amenity`, `requirements`, and `location`. For follow-up queries (e.g., "what about in Newtown?"), it leverages the provided `session_id` to retrieve context from cache or conversation history.</p>
                 </div>
                 <div class="process-step">
-                    <h3>3. Data Collection</h3>
-                    <p>Collects place data from Google Maps API, including locations, ratings, reviews, and business details.</p>
+                    <h3>3. Google Maps Search</h3>
+                    <p>Resolves the target location using Google Geocoding API. Performs searches using Google Places API (Nearby Search) based on extracted parameters. Fetches rich details (reviews, hours, photos) for top results using Google Places API (Place Details).</p>
+                </div>
+                 <div class="process-step">
+                    <h3>4. AI Enhancement</h3>
+                    <p>Generates a concise, friendly `ai_description` for each place using OpenAI. Then, analyzes the list of detailed places using OpenAI to generate a conversational summary, highlights, comparisons, and practical tips relevant to the user's query.</p>
                 </div>
                 <div class="process-step">
-                    <h3>4. AI Analysis</h3>
-                    <p>OpenAI analyzes venues to identify the best options and highlights key features in a conversational format.</p>
+                    <h3>5. Response Formatting</h3>
+                    <p>Constructs the final JSON response. For searches, this includes a conversational `response` string (for chat display), a detailed `places` array (with `ai_description`), and a structured `analysis` object.</p>
                 </div>
             </div>
         </section>
 
         <section class="docs-section">
             <h2>Endpoints</h2>
-            
+
             <div class="endpoint">
                 <h3>Generate Session ID</h3>
                 <code class="endpoint-url">POST /generate_session_id</code>
-                <p>Creates a unique session ID for maintaining conversation context across requests.</p>
-                
+                <p>Creates a unique session ID required for maintaining conversation context across requests to the `/chat` endpoint.</p>
+
                 <h4>Request Format</h4>
                 <pre><code>// No payload required
 {}</code></pre>
@@ -86,71 +90,77 @@
     "session_id": "string" // Unique session identifier
 }</code></pre>
             </div>
-            
+
             <div class="endpoint">
-                <h3>Chat</h3>
+                <h3>Chat / Search</h3>
                 <code class="endpoint-url">POST /chat</code>
-                <p>The primary endpoint for all interactions. Intelligently detects if a message is a search query and responds accordingly.</p>
-                
+                <p>The primary endpoint for all interactions. Handles general conversation and automatically detects location search queries. Requires a `session_id` for context.</p>
+
                 <h4>Request Format</h4>
                 <pre><code>{
-    "message": "string", // Your message (e.g., "Dog friendly beer gardens in Newtown")
-    "session_id": "string" // Your session ID (required)
+    "message": "string", // User's message (e.g., "Hi there" or "Dog friendly beer gardens in Newtown")
+    "session_id": "string" // Session ID obtained from /generate_session_id (required)
 }</code></pre>
 
                 <h4>Response Format for General Chat</h4>
+                <p>If the message is classified as general conversation:</p>
                 <pre><code>{
-    "response": "string" // Text response from the assistant
+    "response": "string" // Text response from the assistant based on conversation history
 }</code></pre>
 
                 <h4>Response Format for Detected Place Searches</h4>
+                <p>If the message is classified as a new place search:</p>
                 <pre><code>{
-    "response": "string", // Conversational summary of search results (only if session_id provided)
-    "places": [
+    "response": "string", // AI-generated conversational summary of the search results (suitable for chat display)
+    "places": [ // Array of detailed place objects found
         {
             "name": "string",
             "formatted_address": "string",
-            "rating": float,
-            "type": ["string"],
-            "review": [
+            "rating": float, // Optional
+            "type": ["string"], // Array of types from Google
+            "review": [ // Array of review objects (optional)
                 {
                     "rating": float,
                     "text": "string",
                     "author_name": "string"
+                    // Other fields like 'relative_time_description' might be present
                 }
             ],
-            "website": "string",
-            "price_level": integer,
-            "opening_hours": {
+            "website": "string", // Optional
+            "price_level": integer, // Optional
+            "opening_hours": { // Optional
                 "open_now": boolean,
-                "periods": [...]
+                "periods": [...], // Google's opening hours structure
+                "weekday_text": ["string"] // Optional, human-readable hours
             },
-            "formatted_phone_number": "string",
+            "formatted_phone_number": "string", // Optional
             "geometry": {
                 "location": {
                     "lat": float,
                     "lng": float
                 }
             },
-            "place_id": "string"
+            "place_id": "string",
+            "ai_description": "string" // NEW: Concise AI-generated description for the list view
+            // Potentially 'photos' array from Google Details
         }
+        // ... other places
     ],
-    "analysis": {
-        "summary": "string",
+    "analysis": { // Structured AI analysis of the results
+        "summary": "string", // Detailed summary from the analysis prompt
         "highlights": [
-            {
-                "place_name": "string",
-                "key_features": ["string"]
-            }
+            {"place_name": "string", "key_features": ["string"]}
         ],
-        "comparisons": ["string"]
-    },
-    "query": {
-        "original": "string",
-        "amenity": "string",
-        "requirements": "string",
-        "location": "string"
+        "comparisons": ["string"],
+        "amenities": [ // NEW: Added based on analysis prompt
+           {"place_name": "string", "amenities": ["string"]}
+        ],
+        "practical_info": [ // NEW: Added based on analysis prompt
+           {"place_name": "string", "info": ["string"]}
+        ]
     }
+    // Note: The 'query' object from the previous docs might not be present in the final response
+    // Use the returned 'places' and 'analysis' for structured data.
 }</code></pre>
             </div>
         </section>
@@ -161,7 +171,9 @@
                 <h3>1. Generate Session ID</h3>
                 <pre><code>curl -X POST \
     http://localhost:8080/generate_session_id \
-    -H 'Content-Type: application/json'</code></pre>
+    -H 'Content-Type: application/json'
+
+# Example Response: {"session_id": "your_unique_session_id_here"}</code></pre>
 
                 <h3>2. Send a Search Query</h3>
                 <pre><code>curl -X POST \
@@ -169,23 +181,29 @@
     -H 'Content-Type: application/json' \
     -d '{
         "message": "Dog friendly beer gardens in Newtown",
-        "session_id": "your_session_id_here"
+        "session_id": "your_unique_session_id_here"
     }'</code></pre>
+                <p>The response will contain `response`, `places`, and `analysis` keys as described above.</p>
 
                 <h3>Python Example (Complete Flow)</h3>
                 <pre><code>import requests
 import json
 
+BASE_URL = "http://localhost:8080" # Adjust if needed
+
 # Step 1: Generate session ID
-session_response = requests.post(
-    "http://localhost:8080/generate_session_id",
-    headers={"Content-Type": "application/json"}
-)
+session_response = requests.post(f"{BASE_URL}/generate_session_id")
 session_data = session_response.json()
 session_id = session_data.get("session_id")
 
+if not session_id:
+    print("Error: Could not get session ID")
+    exit()
+
+print(f"Obtained Session ID: {session_id}")
+
 # Step 2: Send a query
-url = "http://localhost:8080/chat"
+url = f"{BASE_URL}/chat"
 payload = {
     "message": "Dog friendly beer gardens in Newtown",
     "session_id": session_id
@@ -194,56 +212,79 @@ headers = {
     "Content-Type": "application/json"
 }
 
-response = requests.post(url, json=payload, headers=headers)
-results = response.json()
+try:
+    response = requests.post(url, json=payload, headers=headers)
+    response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
+    results = response.json()
 
-# Step 3: Process the results
-if "places" in results:
-    # This was processed as a search query
-    places = results.get("places", [])
-    conversation_response = results.get("response", "")
-    
-    print(f"Conversation response: {conversation_response}")
-    print(f"Found {len(places)} places")
-else:
-    # This was processed as a general chat message
-    print(f"Response: {results.get('response')}")
+    # Step 3: Process the results
+    if "places" in results:
+        # This was processed as a search query
+        places_found = results.get("places", [])
+        conversation_summary = results.get("response", "")
+        analysis_data = results.get("analysis", {})
+
+        print(f"Conversational Summary:\n{conversation_summary}\n")
+        print(f"Found {len(places_found)} places:")
+        for place in places_found:
+            print(f"- {place.get('name')} ({place.get('rating', 'N/A')} stars)")
+            print(f"  AI Description: {place.get('ai_description', 'N/A')}")
+        # You can further process analysis_data here
+
+    elif "response" in results:
+        # This was processed as a general chat message
+        print(f"Chat Response: {results.get('response')}")
+    else:
+        print(f"Unexpected response format: {results}")
+
+except requests.exceptions.RequestException as e:
+    print(f"Error communicating with API: {e}")
+except json.JSONDecodeError:
+    print(f"Error decoding JSON response: {response.text}")
+
 </code></pre>
             </div>
         </section>
 
         <section class="docs-section">
             <h2>Search Query Features</h2>
-            <p>The system intelligently detects search queries using multiple techniques:</p>
+            <p>The `/chat` endpoint intelligently handles searches using:</p>
             <ul>
-                <li><strong>AI-based intent detection</strong> for complex queries</li>
-                <li><strong>Pattern recognition</strong> for locations and amenities</li>
-                <li><strong>Context-aware</strong> responses that remember previous search terms</li>
-                <li><strong>Auto-extraction</strong> of place types, requirements, and locations</li>
+                <li><strong>Multi-Stage Intent Detection:</strong> Combines keyword/pattern matching (e.g., "find", "near", "what about...") with AI classification (OpenAI gpt-4o-mini) to accurately determine if a message is a search query, general chat, or a request for more information.</li>
+                <li><strong>AI Parameter Extraction:</strong> Uses OpenAI gpt-4o-mini to parse natural language search queries and extract structured `amenity`, `requirements`, and `location` parameters.</li>
+                <li><strong>Contextual Follow-ups:</strong> Leverages the `session_id` to access conversation history (via `ConversationManager` and SQLite) and a short-term cache to understand follow-up questions (e.g., "Any similar places in Marrickville?") without requiring the user to repeat the original criteria.</li>
+                <li><strong>AI-Enhanced Results:</strong>
+                    <ul>
+                        <li>Generates a concise, friendly `ai_description` for each found place using OpenAI.</li>
+                        <li>Performs AI analysis (OpenAI gpt-4o-mini) on the list of results to provide structured highlights, comparisons, and practical tips tailored to the query.</li>
+                        <li>Formats a conversational `response` string summarizing the findings.</li>
+                    </ul>
+                </li>
             </ul>
-            <p>Examples of queries that are automatically handled:</p>
+            <p>Examples of queries handled:</p>
             <ul>
                 <li>"Dog friendly beer gardens in Newtown"</li>
                 <li>"Coffee shops with wifi near Sydney CBD"</li>
-                <li>"Italian restaurants in Surry Hills"</li>
+                <li>"Hidden bars in Darlinghurst"</li>
                 <li>"What about in Marrickville?" (as a follow-up to a previous search)</li>
+                <li>"Tell me more about The Courthouse Hotel" (triggers general chat, providing details if context allows)</li>
             </ul>
         </section>
 
         <section class="docs-section">
-            <h2>Notes on Rate Limits</h2>
-            <p>This service uses external APIs with their own rate limits:</p>
+            <h2>Notes on Rate Limits & Data</h2>
+            <p>This service relies on external APIs and has considerations:</p>
             <ul>
-                <li>OpenAI API rate limits apply to all queries</li>
-                <li>Google Maps API limits apply to location searches</li>
-                <li>Session data is cleaned up after 7 days of inactivity</li>
+                <li>OpenAI API rate limits apply to intent detection, parameter extraction, description generation, and result analysis.</li>
+                <li>Google Maps API limits apply (Geocoding, Places API Nearby Search, Places API Place Details). Ensure your key has these APIs enabled.</li>
+                <li>Session data (conversation history) is stored in a local SQLite database (`conversations.db`) and is automatically cleaned up after 7 days of inactivity.</li>
             </ul>
         </section>
     </div>
 
     <footer class="app-footer">
         <div class="footer-content">
-            <p>&copy; 2024 Louis Sabri. All rights reserved.</p>
+            <p>© 2024 Louis Sabri. All rights reserved.</p>
             <div class="footer-links">
                 <a href="https://github.com/louissabri" target="_blank" rel="noopener noreferrer" title="GitHub">
                     <i class="fab fa-github"></i>
@@ -258,7 +299,8 @@ else:
         </div>
     </footer>
 
+    <!-- Keep existing script links -->
     <script src="{{ url_for('static', filename='script.js') }}"></script>
     <script src="{{ url_for('static', filename='theme.js') }}"></script>
 </body>
-</html> 
+</html>
