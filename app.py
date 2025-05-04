@@ -711,6 +711,41 @@ async def search(query=None, session_id=None):
                         # Get place details from Google Maps API
                         place_details = await _fetch_place_details(place_id)
                         if place_details:
+                            # Generate AI description for this place
+                            place_name = place_details.get('name', 'This place')
+                            place_types = place_details.get('type', [])
+                            place_address = place_details.get('formatted_address', '')
+
+                            # Construct a prompt for OpenAI
+                            description_prompt = f"""
+                            Generate a very concise, friendly, one-sentence description (max 20 words) 
+                            for the amenity '{place_name}' located at '{place_address}'. 
+                            It is known for being types: {', '.join(place_types) if isinstance(place_types, list) else str(place_types)}. 
+                            Focus on its main purpose or vibe, and link it to the user's requirement '{requirements}'.
+                            """
+
+                            try:
+                                # Use OpenAI to generate a short description
+                                description_response = openai.ChatCompletion.create(
+                                    model="gpt-4o-mini",  # Or your preferred model
+                                    messages=[
+                                        {"role": "system", "content": "You provide concise, appealing one-sentence descriptions for amenities."},
+                                        {"role": "user", "content": description_prompt}
+                                    ],
+                                    max_tokens=40,  # Limit response length
+                                    temperature=0.6  # Slightly creative but concise
+                                )
+                                short_description = description_response['choices'][0]['message']['content'].strip()
+                                logger.info(f"[Search] Generated description for {place_name}: {short_description}")
+
+                                # Add the description to the place_details dictionary
+                                place_details['ai_description'] = short_description
+
+                            except Exception as desc_error:
+                                logger.error(f"[Search] Failed to generate description for {place_name}: {str(desc_error)}")
+                                # Add a fallback description
+                                place_details['ai_description'] = f"A notable place in the area."  # Fallback
+                            
                             places_with_details.append(place_details)
                         else:
                             logger.warning(f"[Search] No details found for place: {place.get('name')}")

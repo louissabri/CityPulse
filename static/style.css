@@ -241,6 +241,30 @@ body {
     font-size: 0.8rem;
 }
 
+/* List item details styles for expandable content */
+.list-item .list-item-details {
+    display: none;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+}
+
+.list-item.expanded .list-item-details {
+    display: block;
+    max-height: 300px;
+}
+
+.list-item .ai-description {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    line-height: 1.4;
+    padding-bottom: 0.5rem;
+}
+
 /* Updated Chat Container Styles */
 .chat-container {
     position: fixed;

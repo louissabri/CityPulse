@@ -364,8 +364,6 @@ async function sendMessage() {
                         <div class="info-window">
                             <h4>${place.name || 'Unknown'}</h4>
                             <p>${place.formatted_address || 'Address unavailable'}</p>
-                            <p>Rating: ${place.rating || 'N/A'}</p>
-                            ${place.website ? `<p><a href="${place.website}" target="_blank">Website</a></p>` : ''}
                         </div>
                     `;
                     
@@ -398,21 +396,65 @@ async function sendMessage() {
                     // Add to list view
                     const listViewContainer = document.getElementById('list-view');
                     if (listViewContainer) {
-                        // Create simplified list item with only name and rating
+                        // Create list item with expandable details
                         const listItem = document.createElement('div');
                         listItem.className = 'list-item';
                         
-                        // Create base structure for list item with only name and rating
+                        // Store data on the element using dataset
+                        if (place.opening_hours && place.opening_hours.weekday_text) {
+                            // Store as a JSON string because dataset values are strings
+                            listItem.dataset.openingHours = JSON.stringify(place.opening_hours.weekday_text);
+                        } else {
+                            listItem.dataset.openingHours = JSON.stringify(["Opening hours not available."]);
+                        }
+                        listItem.dataset.aiDescription = place.ai_description || "Description not available.";
+                        
+                        // Create base structure for list item with only name and rating, plus hidden details
                         listItem.innerHTML = `
                             <div class="list-marker">${index + 1}</div>
                             <div class="list-content">
                                 <h4>${place.name || 'Unknown'}</h4>
                                 <p class="rating">${'★'.repeat(Math.round(place.rating || 0))}${'☆'.repeat(5 - Math.round(place.rating || 0))}</p>
+                                
+                                <!-- Hidden details section -->
+                                <div class="list-item-details"> 
+                                    <div class="ai-description">
+                                        <!-- AI description will be loaded here on click -->
+                                    </div>
+                                </div>
                             </div>
                         `;
                         
-                        // Add click event to list item
+                        // Add click event to list item to toggle details and interact with map
                         listItem.addEventListener('click', () => {
+                            // Find the details container within this specific listItem
+                            const detailsContainer = listItem.querySelector('.list-item-details');
+                            const descriptionElement = detailsContainer.querySelector('.ai-description');
+                            
+                            // Close all other expanded items first
+                            const allListItems = document.querySelectorAll('.list-item');
+                            allListItems.forEach(item => {
+                                if (item !== listItem && item.classList.contains('expanded')) {
+                                    item.classList.remove('expanded');
+                                }
+                            });
+                            
+                            // Check if it's currently expanded
+                            const isExpanded = listItem.classList.contains('expanded');
+                            
+                            if (!isExpanded) {
+                                // Populate the details
+                                
+                                // Populate Description
+                                descriptionElement.textContent = listItem.dataset.aiDescription;
+                                
+                                // Add the 'expanded' class to trigger CSS
+                                listItem.classList.add('expanded');
+                            } else {
+                                // Remove the 'expanded' class to hide via CSS
+                                listItem.classList.remove('expanded');
+                            }
+                            
                             // Center map on this marker
                             map.setCenter(position);
                             map.setZoom(16);
