@@ -286,6 +286,12 @@ async function sendMessage() {
             console.log("Session initialized with ID:", sessionId);
         }
         
+        // Check if this is likely a follow-up query
+        const isLikelyFollowUp = /what about|how about|any in|similar in/.test(query.toLowerCase());
+        if (isLikelyFollowUp) {
+            console.log("Detected likely follow-up query:", query);
+        }
+        
         // Log request details
         console.log("Sending request to /chat with data:", {
             message: query,
@@ -310,7 +316,12 @@ async function sendMessage() {
         
         const data = await response.json();
         
+        // Enhanced debugging for follow-up query issue
         console.log("Received response:", data);
+        console.log("Response contains places array:", data.places ? `Yes (${data.places.length} places)` : "No");
+        if (data.places) {
+            console.log("First place:", data.places[0] ? data.places[0].name : "None");
+        }
         
         // Remove typing indicator
         clearInterval(typingIndicator.interval);
@@ -320,18 +331,24 @@ async function sendMessage() {
         if (data.places && data.places.length > 0) {
             console.log("Search results received, formatting for display");
             
+            // Track if this is likely a follow-up query based on the message
+            const isFollowUpQuery = /what about|how about|any in|similar in/.test(query.toLowerCase());
+            if (isFollowUpQuery) {
+                console.log("Processing follow-up search results");
+            }
+            
             // Add assistant response to chat (without auto-scrolling - handled in addMessageToChat)
             addMessageToChat('assistant', data.response);
             
-            // Clear previous markers
-            if (markers.length > 0) {
-                markers.forEach(marker => marker.setMap(null));
-                markers = [];
-            }
+            // ALWAYS clear previous markers for ANY search results, including follow-ups
+            console.log(`Clearing ${markers.length} existing markers`);
+            markers.forEach(marker => marker.setMap(null));
+            markers = [];
             
-            // Add markers to the map and prepare list view data
+            // ALWAYS clear the list view for ANY search results, including follow-ups
             const listViewContainer = document.getElementById('list-view');
             if (listViewContainer) {
+                console.log("Clearing existing list view");
                 listViewContainer.innerHTML = '';
             }
             
@@ -339,9 +356,13 @@ async function sendMessage() {
             const bounds = new google.maps.LatLngBounds();
             
             // Add markers for each place
+            console.log(`Adding ${data.places.length} new markers and list items`);
+            let markersAdded = 0;
+            
             data.places.forEach((place, index) => {
                 // Extract location from geometry
                 if (place.geometry && place.geometry.location) {
+                    markersAdded++;
                     const position = new google.maps.LatLng(
                         place.geometry.location.lat,
                         place.geometry.location.lng
@@ -477,6 +498,7 @@ async function sendMessage() {
             
             // Fit map to bounds if we have markers
             if (markers.length > 0) {
+                console.log(`Successfully added ${markersAdded} markers to map`);
                 map.fitBounds(bounds);
                 
                 // Add a small padding to bounds
@@ -485,6 +507,8 @@ async function sendMessage() {
                         map.setZoom(16);
                     }
                 });
+            } else {
+                console.warn("No markers were added to the map");
             }
             
             // Update search history but don't scroll
@@ -501,6 +525,24 @@ async function sendMessage() {
             
             // Update history UI
             updateSearchHistory();
+        } else if (data.places && data.places.length === 0) {
+            // Handle empty places array (search with no results)
+            console.log("Search returned empty places array - no results found");
+            
+            // Add assistant response to chat
+            addMessageToChat('assistant', data.response);
+            
+            // Clear previous markers
+            console.log("Clearing existing markers due to empty results");
+            markers.forEach(marker => marker.setMap(null));
+            markers = [];
+            
+            // Clear list view
+            const listViewContainer = document.getElementById('list-view');
+            if (listViewContainer) {
+                console.log("Clearing existing list view due to empty results");
+                listViewContainer.innerHTML = '';
+            }
         } else if (data.response) {
             // Regular chat message (not search results)
             addMessageToChat('assistant', data.response);

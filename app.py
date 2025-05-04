@@ -887,13 +887,17 @@ Format your response as JSON with these fields:
 
                     # Add the conversational response to conversation history
                     conversation_manager.add_message(session_id, 'assistant', conversational_response)
-
+                    
+                    # Log the number of places being returned and query details
+                    logger.info(f"[Search] Returning {len(places_with_details)} places for follow-up query: '{user_query}' (search_terms: '{search_terms}', location: '{location_query}')")
+                    logger.info(f"[Search] First place in results: {places_with_details[0].get('name') if places_with_details else 'None'}")
+                    
                     # Return the conversational response to match the chat style
                     request_duration = (datetime.now() - request_start_time).total_seconds()
                     logger.info(f"=== Search End === Total Duration: {request_duration:.2f}s")
-
+                    
                     # For the response, return the conversational format
-                    return jsonify({'response': conversational_response,
+                    return jsonify({'response': conversational_response, 
                                   'places': places_with_details,
                                   'analysis': analysis_data})
 
