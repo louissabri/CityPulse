@@ -80,8 +80,8 @@ class ConversationManager:
         self.save_conversation(session_id, conversation)
         return conversation
     
-    def trim_conversation(self, session_id, max_tokens=3000):
-        """Trim conversation to stay under token limits."""
+    def trim_conversation(self, session_id, max_tokens=3000, preserve_places=True):
+        """Trim conversation to stay under token limits while preserving context about places."""
         conversation = self.get_conversation(session_id)
         
         # Always keep the system message if present
@@ -99,7 +99,39 @@ class ConversationManager:
                 conversation = [system_message] + conversation
             return conversation
         
-        # Otherwise, keep removing oldest messages (after system message)
+        # Special handling to preserve context about places
+        if preserve_places:
+            # Find messages containing place information (typically assistant responses with search results)
+            place_info_indices = []
+            for i, msg in enumerate(conversation):
+                if msg['role'] == 'assistant' and any(marker in msg['content'].lower() for marker in 
+                                                    ['i found some', 'here are some', 'great places', 'found these places']):
+                    place_info_indices.append(i)
+            
+            # If we found place information, ensure we keep at least the most recent one
+            if place_info_indices:
+                must_keep_indices = set()
+                # Keep the most recent place info message
+                most_recent_place_info = place_info_indices[-1]
+                must_keep_indices.add(most_recent_place_info)
+                
+                # Also keep the user query that prompted this place info
+                if most_recent_place_info > 0 and conversation[most_recent_place_info-1]['role'] == 'user':
+                    must_keep_indices.add(most_recent_place_info-1)
+        
+        # Remove oldest messages first, but skip the ones we must keep
+        filtered_conversation = []
+        if preserve_places and place_info_indices:
+            # Copy messages we must keep
+            for i, msg in enumerate(conversation):
+                if i in must_keep_indices or i >= len(conversation) - 4:  # Always keep most recent 4 messages
+                    filtered_conversation.append(msg)
+            
+            # If we still need to trim, remove older messages
+            conversation = filtered_conversation
+            total_chars = sum(len(msg['content']) for msg in conversation)
+        
+        # If still over the limit, continue removing oldest messages
         while total_chars > max_tokens * 4 and len(conversation) > 2:
             removed = conversation.pop(0)  # Remove oldest message
             total_chars -= len(removed['content'])

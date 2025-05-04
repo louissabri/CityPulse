@@ -111,38 +111,38 @@ async def chat():
         data = request.json
         user_message = data.get('message', '').strip()
         session_id = data.get('session_id')
-
+        
         logger.info(f"Received chat request - Message: '{user_message}', Session ID: {session_id}")
-
+        
         if not user_message:
             logger.warning("Empty message received")
             return jsonify({'response': "I didn't receive a message. How can I help you?"})
-
+        
         if not session_id:
             logger.warning("No session ID provided")
             return jsonify({'error': 'No session ID provided'}), 400
 
         # Check if this might be a search query
-        is_search_query = any(keyword in user_message.lower() for keyword in
+        is_search_query = any(keyword in user_message.lower() for keyword in 
                              ['find', 'where', 'location', 'place', 'nearby', 'restaurant', 'cafe', 'bar'])
-
+        
         # Also check for follow-up questions about locations
         if not is_search_query:
             # Check for patterns like "what about in [location]" or "any in [location]"
             follow_up_location_patterns = [
                 r'what about in \w+',
-                r'how about in \w+',
+                r'how about in \w+', 
                 r'any in \w+',
                 r'what about \w+',
                 r'similar in \w+'
             ]
-
+            
             for pattern in follow_up_location_patterns:
                 if re.search(pattern, user_message.lower()):
                     is_search_query = True
                     logger.info(f"Detected location follow-up query pattern: '{user_message}'")
                     break
-
+        
         # Use NLP to detect search intent instead of keyword matching
         # This approach classifies the query based on its overall meaning rather than specific keywords
         try:
@@ -214,24 +214,139 @@ async def chat():
 
         logger.info(f"Message identified as search query: {is_search_query}")
 
+        # Flag to determine whether to call search function
+        call_search_function = False
+        
+        # If initially classified as a search query, do additional classification
+        if is_search_query:
+            logger.info(f"Initial classification as search query. Now checking if this is a 'more info' follow-up")
+            
+            # Check if this is a 'tell me more about X' type of follow-up
+            more_info_patterns = [
+                r'tell me more about',
+                r'more details on',
+                r'more information about',
+                r'more about',
+                r'details for',
+                r'what can you tell me about',
+                r'what do you know about'
+            ]
+            
+            # Initial check for common "more info" patterns
+            potentially_more_info = any(re.search(pattern, user_message.lower()) for pattern in more_info_patterns)
+            
+            if potentially_more_info:
+                logger.info(f"Detected potential 'more info' follow-up: '{user_message}'")
+                
+                try:
+                    # Get recent conversation to provide context
+                    conversation_history = conversation_manager.get_conversation(session_id)
+                    
+                    # Only consider a reasonable number of recent messages
+                    history_snippet = conversation_history[-6:] if len(conversation_history) >= 6 else conversation_history
+                    
+                    # Create formatted history for the prompt (excluding current user message)
+                    formatted_history = ""
+                    for msg in history_snippet:
+                        if msg['role'] == 'user' and msg['content'] == user_message:
+                            continue
+                        formatted_history += f"{msg['role'].title()}: {msg['content']}\n\n"
+                    
+                    # Craft a classification prompt
+                    classification_prompt = f"""You are an assistant that classifies user follow-up questions about local places based on conversation history.
+
+Recent Conversation History:
+{formatted_history}
+User: {user_message}
+
+Based on the User's message and the history, classify the User's intent:
+A) Requesting a NEW SEARCH for different places/locations/criteria.
+B) Requesting MORE INFORMATION about a SPECIFIC place already mentioned.
+
+Respond with ONLY the letter A or B."""
+
+                    # Call OpenAI for classification
+                    logger.info("Calling OpenAI to classify follow-up intent")
+                    classification_response = openai.ChatCompletion.create(
+                        model="gpt-4o-mini",  # Using the same model as other calls
+                        messages=[
+                            {"role": "system", "content": "Classify user intent: A=New Search, B=More Info."},
+                            {"role": "user", "content": classification_prompt}
+                        ],
+                        max_tokens=2,
+                        temperature=0.1  # Low temperature for consistency
+                    )
+                    
+                    follow_up_type = classification_response['choices'][0]['message']['content'].strip().upper()
+                    logger.info(f"Follow-up classification result: {follow_up_type}")
+                    
+                    if follow_up_type == 'A':
+                        call_search_function = True
+                        logger.info("Classified as a NEW SEARCH request")
+                    elif follow_up_type == 'B':
+                        call_search_function = False
+                        logger.info("Classified as a MORE INFO request about a specific place")
+                    else:
+                        # Unexpected response, default to safer option (general chat)
+                        call_search_function = False
+                        logger.warning(f"Unexpected classification result: {follow_up_type}. Defaulting to general chat.")
+                
+                except Exception as e:
+                    logger.error(f"Error during follow-up classification: {str(e)}", exc_info=True)
+                    # Default to general chat on error (safer than incorrect search)
+                    call_search_function = False
+            else:
+                # Not a "more info" query but still a search query
+                call_search_function = True
+                logger.info("No 'more info' patterns detected. Proceeding with search.")
+        else:
+            # Not initially classified as a search query
+            call_search_function = False
+            logger.info("Not classified as a search query. Handling as general chat.")
+        
         # Add user message to conversation history
         conversation_manager.add_message(session_id, 'user', user_message)
         logger.info(f"Added user message to conversation history for session {session_id}")
-
+        
         # If this looks like a search query, redirect it to the search endpoint
-        if is_search_query:
-            logger.info(f"Handling as search query: '{user_message}'")
+        if call_search_function:
+            logger.info(f"Handling as NEW SEARCH query: '{user_message}'")
             # Create a new request to the search endpoint
             search_result = await search(user_message, session_id)
             logger.info(f"Search complete, returning result type: {type(search_result)}")
             return search_result
-
+        
         # Get conversation history (trimmed to avoid token limits)
         conversation = conversation_manager.trim_conversation(session_id)
         logger.info(f"Got trimmed conversation with {len(conversation)} messages")
-
+        
         try:
             logger.info("Calling OpenAI API for general chat")
+            
+            # Check if this is a "more info" request to enhance the system message
+            is_more_info_request = any(re.search(pattern, user_message.lower()) for pattern in [
+                r'tell me more about',
+                r'more details on',
+                r'more information about',
+                r'more about',
+                r'details for',
+                r'what can you tell me about',
+                r'what do you know about'
+            ])
+            
+            # Customize system message if it exists
+            if is_more_info_request and conversation and conversation[0]['role'] == 'system':
+                logger.info("Enhanced system message for 'more info' request about a specific place")
+                conversation[0]['content'] = """You are CityPulse, a helpful assistant for finding local information about places in Sydney.
+When users ask for more information about a specific place you've previously mentioned:
+1. Provide rich, detailed information about that specific place
+2. Include details about atmosphere, specialties, what makes it unique
+3. Mention practical information such as best times to visit, what to expect
+4. Be conversational and helpful, as if giving advice to a friend
+
+If the user is asking about a place you haven't mentioned before or don't have information about, 
+politely explain that you don't have specific details about that place."""
+            
             # Use the older openai API style
             response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",  # Upgraded to GPT-4o mini for better conversation
@@ -239,24 +354,24 @@ async def chat():
                 max_tokens=1000,
                 temperature=0.7
             )
-
+            
             # Extract the assistant's response
             assistant_message = response['choices'][0]['message']['content'].strip()
             logger.info(f"Received response from OpenAI: '{assistant_message[:50]}...'")
-
+            
             # Add assistant's response to conversation history
             conversation_manager.add_message(session_id, 'assistant', assistant_message)
-
+            
             # Maybe cleanup old sessions
             maybe_cleanup()
-
+            
             logger.info("Returning successful response to client")
             return jsonify({'response': assistant_message})
-
+            
         except Exception as e:
             logger.error(f"OpenAI API error: {str(e)}", exc_info=True)
             return jsonify({'response': "I'm sorry, I encountered an error processing your request. Please try again."})
-
+    
     except Exception as e:
         logger.error(f"Error in chat endpoint: {str(e)}", exc_info=True)
         return jsonify({'response': "I'm sorry, something went wrong with the chat service. Please try again."})
